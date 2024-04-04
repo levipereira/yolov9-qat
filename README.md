@@ -34,7 +34,7 @@ docker run --gpus all  \
 
 ```
 
-1. Clone and apply patch
+1. Clone and apply patch (Inside Docker)
 ```bash
 cd /
 git clone https://github.com/levipereira/yolov9-qat.git
