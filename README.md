@@ -15,27 +15,44 @@ NVIDIA PyTorch image (`nvcr.io/nvidia/pytorch:23.02-py3`)
 
 Release 23.02 is based on CUDA 12.0.1, which requires NVIDIA Driver release 525 or later. 
 
+
+## Installation
 ```bash
-$ docker pull nvcr.io/nvidia/pytorch:23.02-py3
+
+docker pull nvcr.io/nvidia/pytorch:23.02-py3
+
+git clone https://github.com/WongKinYiu/yolov9.git
+
+docker run --gpus all  \
+ -it \
+ --net host  \
+ --ipc=host \
+ -v $(pwd)/yolov9:/yolov9 \
+ -v $(pwd)/coco/:/yolov9/coco \
+ -v $(pwd)/runs:/yolov9/runs \
+ nvcr.io/nvidia/pytorch:23.02-py3
+
 ```
 
 1. Clone and apply patch
 ```bash
-# use this YoloV9 as a sample base 
 cd /
-git clone https://github.com/WongKinYiu/yolov9.git
 git clone https://github.com/levipereira/yolov9-qat.git
-cd yolov9-qat
+cd /yolov9-qat
 ./patch_yolov9.sh /yolov9
+cd /yolov9
 ```
 
 2. Install dependencies
 ```bash
-$ pip install pytorch-quantization --extra-index-url https://pypi.ngc.nvidia.com
+cd /yolov9-qat
+./install_dependencies.sh
+cd /yolov9
 ```
 
 3. Download dataset and pretrained model
 ```bash
+$ cd /yolov9
 $ bash scripts/get_coco.sh
 $ wget https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-converted.pt
 ```
