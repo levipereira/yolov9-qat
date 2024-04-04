@@ -1,4 +1,5 @@
 # YOLOv9 QAT
+This implementation of YOLOv9 QAT is specifically tailored for deployment on TensorRT platforms. If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
 ## Introduction
 
@@ -41,14 +42,14 @@ $ wget https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-conv
 
 ## Usage
 
-### Quantize Model
+## Quantize Model
 
 To quantize a YOLOv9 model, run:
 
 ```bash
 python3 qat.py quantize --weights yolov9-c-converted.pt  --name yolov9_qat --exist-ok
 
-python qat.py quantize --weights <weights_path> --data <data_path> --hyp <hyp_path> --device <device> ...
+python qat.py quantize --weights <weights_path> --data <data_path> --hyp <hyp_path> ...
 ```
 ## Quantize Command Arguments
 
@@ -73,4 +74,65 @@ This command is used to perform PTQ/QAT finetuning.
 - `--no-eval-origin`: Disable eval for origin model.
 - `--no-eval-ptq`: Disable eval for ptq model.
 - `--eval-pycocotools`: Evaluation using Pycocotools. Valid only for COCO Dataset. (have bug dont use)
+
+## Sensitive Layer Analysis
+```bash
+python qat.py sensitive --weights yolov9-c.pt --data coco.yaml --hyp hyp.scratch-high.yaml ...
+```
+
+## Sensitive Command Arguments
+
+### Description
+This command is used for sensitive layer analysis.
+
+### Arguments
+
+- `--weights`: Path to the model weights (.pt). Default: ROOT/runs/models_original/yolov9-c.pt.
+- `--device`: Device to use for training/evaluation (e.g., "cuda:0"). Default: "cuda:0".
+- `--data`: Path to the dataset configuration file (data.yaml). Default: data/coco.yaml.
+- `--batch-size`: Total batch size for training/evaluation. Default: 10.
+- `--imgsz`, `--img`, `--img-size`: Train/val image size (pixels). Default: 640.
+- `--hyp`: Path to the hyperparameters file (hyp.yaml). Default: data/hyps/hyp.scratch-high.yaml.
+- `--project`: Directory to save the training/evaluation outputs. Default: ROOT/runs/qat_sentive.
+- `--name`: Name of the training/evaluation experiment. Default: 'exp'.
+- `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
+- `--num-image`: Number of images to evaluate. Default: None.
+
+
+## Evaluate QAT Model
+
+```bash
+python qat.py eval --weights yolov9-c.pt --data coco.yaml  
+```
+## Evaluation Command Arguments
+
+### Description
+This command is used to perform evaluation on QAT Models.
+
+### Arguments
+
+- `--weights`: Path to the model weights (.pt). Default: ROOT/runs/models_original/yolov9-c.pt.
+- `--data`: Path to the dataset configuration file (data.yaml). Default: data/coco.yaml.
+- `--batch-size`: Total batch size for evaluation. Default: 10.
+- `--imgsz`, `--img`, `--img-size`: Validation image size (pixels). Default: 640.
+- `--device`: Device to use for evaluation (e.g., "cuda:0"). Default: "cuda:0".
+- `--conf-thres`: Confidence threshold for evaluation. Default: 0.001.
+- `--iou-thres`: NMS threshold for evaluation. Default: 0.7.
+- `--project`: Directory to save the evaluation outputs. Default: ROOT/runs/qat_eval.
+- `--name`: Name of the evaluation experiment. Default: 'exp'.
+- `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
+- `--use-pycocotools`: Generate COCO annotation json format for the custom dataset.
+
+# Export ONNX 
+The goal of exporting to ONNX is to deploy to TensorRT, not to ONNX runtime. So we only export fake quantized model into a form TensorRT will take. Fake quantization will be broken into a pair of QuantizeLinear/DequantizeLinear ONNX ops. TensorRT will take the generated ONNX graph, and execute it in int8 in the most optimized way to its capability.
+
+## Export ONNX Model without End2End
+```bash 
+python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include onnx --dynamic --simplify --inplace
+```
+
+## Export ONNX Model End2End
+```bash
+python3 export_qat.py  --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include onnx_end2end
+```
 

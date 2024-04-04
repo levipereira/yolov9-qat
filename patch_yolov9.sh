@@ -17,7 +17,7 @@ fi
 
 # Copy files to the YOLOv9 directory
 cp qat.py "$yolov9_dir/qat.py" && echo "qat.py patched successfully."
-cp export.py "$yolov9_dir/export_qat.py" && echo "export_qat.py patched successfully."
+cp export_qat.py "$yolov9_dir/export_qat.py" && echo "export_qat.py patched successfully."
 cp models/quantize_rules.py "$yolov9_dir/models/quantize_rules.py" && echo "quantize_rules.py patched successfully."
 cp models/quantize.py "$yolov9_dir/models/quantize.py" && echo "quantize.py patched successfully."
 
