@@ -7,7 +7,7 @@ This repository contains scripts for quantization-aware training (QAT) and sensi
 
 We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
-## How To QAT Training
+## How To QAT Training (Finetune)
 ### 1.Setup
 
 Suggest to use docker environment.
