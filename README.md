@@ -4,7 +4,7 @@ This implementation aims to provide an efficient, low-latency version of YOLOv9 
 If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
 ## Details
-- The files in this repository represent a patch that adds QAT functionality to the original YOLOv9 repository.
+- The files in this repository represent a patch that adds QAT functionality to the original [YOLOv9 repository](https://github.com/WongKinYiu/yolov9/).
 - This patch is intended to be applied to the main YOLOv9 repository to incorporate the ability to train with QAT.
 - The implementation is optimized to work efficiently with TensorRT, an inference library that leverages hardware acceleration to enhance inference performance.
 - Users interested in implementing object detection using YOLOv9 with QAT on TensorRT platforms can benefit from this repository as it provides a ready-to-use solution.
