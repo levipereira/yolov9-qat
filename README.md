@@ -1,5 +1,5 @@
 # YOLOv9 QAT
-This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. Quantization-Aware Training is a training technique that allows model optimization for inference with reduced floating-point precision. <br>
+This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.
 If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
