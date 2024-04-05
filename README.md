@@ -30,8 +30,6 @@ In this section, we'll outline the steps to perform Quantization-Aware Training 
 By following these steps, you can successfully perform Quantization-Aware Training (QAT) using fine-tuning with your YOLOv9 model.
 
 ## How to Install and Training 
-### 1.Setup
-
 Suggest to use docker environment.
 NVIDIA PyTorch image (`nvcr.io/nvidia/pytorch:23.02-py3`)
 
