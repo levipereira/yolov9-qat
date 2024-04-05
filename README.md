@@ -11,6 +11,41 @@ If you do not intend to deploy your model using TensorRT, it is recommended not 
 
 We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
+## Accuracy Report
+```bash
+YOLOv9-C - All layers Quantized
+
+Eval Model | AP       | AP50     | Precision  | Recall
+-------------------------------------------------------
+Origin     | 0.5297   | 0.699    | 0.7432     | 0.634
+PTQ        | 0.5281   | 0.697    | 0.7437     | 0.63
+QAT - Best | 0.5287   | 0.6976   | 0.7396     | 0.6345
+
+
+YOLOv9-C - Last Layer Not Quantized
+Eval Model | AP       | AP50     | Precision  | Recall
+-------------------------------------------------------
+Origin     | 0.5297   | 0.699    | 0.7432     | 0.634
+PTQ        | 0.528    | 0.6971   | 0.7463     | 0.6296
+QAT - Best | 0.5291   | 0.698    | 0.7381     | 0.6358
+
+
+YOLOv9-E - All layers Quantized
+Eval Model | AP       | AP50     | Precision  | Recall
+-------------------------------------------------------
+Origin     | 0.5576   | 0.7246   | 0.7547     | 0.6649
+PTQ        | 0.5565   | 0.7237   | 0.7505     | 0.6641
+QAT - Best | 0.5564   | 0.7232   | 0.7546     | 0.6627
+
+YOLOv9-E - Last Layer Not Quantized
+
+Eval Model | AP       | AP50     | Precision  | Recall
+-------------------------------------------------------
+Origin     | 0.5576   | 0.7246   | 0.7547     | 0.6649
+PTQ        | 0.5568   | 0.724    | 0.7526     | 0.6623
+QAT - Best | 0.5569   | 0.7235   | 0.7541     | 0.6631
+```
+
 ## QAT Training (Finetune)
 
 In this section, we'll outline the steps to perform Quantization-Aware Training (QAT) using fine-tuning. <br> **Please note that the supported quantization mode is fine-tuning only.** <br> The model should be trained using the original implementation train.py, and after training and reparameterization of the model, the user should proceed with quantization.
