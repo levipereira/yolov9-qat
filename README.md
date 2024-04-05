@@ -1,13 +1,36 @@
 # YOLOv9 QAT
-This implementation of YOLOv9 QAT is specifically tailored for deployment on TensorRT platforms. If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
+This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. Quantization-Aware Training is a training technique that allows model optimization for inference with reduced floating-point precision. <br>
+This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.
+If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
-## Introduction
-
-This repository contains scripts for quantization-aware training (QAT) and sensitive layer analysis for YOLOv9 models.
+## Details
+- The files in this repository represent a patch that adds QAT functionality to the original YOLOv9 repository.
+- This patch is intended to be applied to the main YOLOv9 repository to incorporate the ability to train with QAT.
+- The implementation is optimized to work efficiently with TensorRT, an inference library that leverages hardware acceleration to enhance inference performance.
+- Users interested in implementing object detection using YOLOv9 with QAT on TensorRT platforms can benefit from this repository as it provides a ready-to-use solution.
 
 We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
 ## How To QAT Training (Finetune)
+
+In this section, we'll outline the steps to perform Quantization-Aware Training (QAT) using fine-tuning. <br> **Please note that the supported quantization mode is fine-tuning only.** <br> The model should be trained using the original implementation train.py, and after training and reparameterization of the model, the user should proceed with quantization.
+
+### Steps:
+
+1. **Train the Model Using train.py:**
+   - Utilize the original implementation train.py to train your YOLOv9 model with your dataset and desired configurations.
+   - Follow the training instructions provided in the original YOLOv9 repository to ensure proper training.
+
+2. **Reparameterize the Model:**
+   - After completing the training, reparameterize the trained model to prepare it for quantization. This step is crucial for ensuring that the model's weights are in a suitable format for quantization.
+
+3. **Proceed with Quantization:**
+   - Once the model is reparameterized, proceed with the quantization process. This involves applying the Quantization-Aware Training technique to fine-tune the model's weights, taking into account the quantization effects.
+   - Ensure that you have the necessary tools and libraries to perform quantization-aware training. This may involve using frameworks or scripts specifically designed for this purpose.
+
+By following these steps, you can successfully perform Quantization-Aware Training (QAT) using fine-tuning with your YOLOv9 model.
+
+
 ### 1.Setup
 
 Suggest to use docker environment.
