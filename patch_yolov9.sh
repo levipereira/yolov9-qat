@@ -15,10 +15,19 @@ if [ ! -d "$yolov9_dir" ]; then
     exit 1
 fi
 
+if [ ! -f "$yolov9_dir/models/experimental.py" ]; then
+    echo "Error: '$yolov9_dir' does not appear to contain a valid YOLOv9 repository."
+    echo "Please make sure '$yolov9_dir' is the root directory of a YOLOv9 repository."
+    exit 1
+fi
+
 # Copy files to the YOLOv9 directory
+cp val_trt.py "$yolov9_dir/val_trt.py" && echo "qat.py patched successfully."
 cp qat.py "$yolov9_dir/qat.py" && echo "qat.py patched successfully."
 cp export_qat.py "$yolov9_dir/export_qat.py" && echo "export_qat.py patched successfully."
 cp models/quantize_rules.py "$yolov9_dir/models/quantize_rules.py" && echo "quantize_rules.py patched successfully."
 cp models/quantize.py "$yolov9_dir/models/quantize.py" && echo "quantize.py patched successfully."
+cp scripts/generate_trt_engine.sh "$yolov9_dir/scripts/generate_trt_engine.sh" && echo "quantize.py patched successfully."
+cp scripts/val_trt.sh "$yolov9_dir/scripts/val_trt.sh" && echo "quantize.py patched successfully."
 
 echo "Patch applied successfully to YOLOv9 directory: $yolov9_dir"
