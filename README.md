@@ -52,15 +52,34 @@ In this section, we'll outline the steps to perform Quantization-Aware Training 
 
 ### Steps:
 
-1. **Train the Model Using train.py:**
+1. **Train the Model Using [train.py](https://github.com/WongKinYiu/yolov9/blob/main/train.py):**
    - Utilize the original implementation train.py to train your YOLOv9 model with your dataset and desired configurations.
    - Follow the training instructions provided in the original YOLOv9 repository to ensure proper training.
 
-2. **Reparameterize the Model:**
+2. **Reparameterize the Model [reparameterization.py](https://github.com/sunmooncode/yolov9/blob/main/tools/reparameterization.py):**
    - After completing the training, reparameterize the trained model to prepare it for quantization. This step is crucial for ensuring that the model's weights are in a suitable format for quantization.
 
-3. **Proceed with Quantization:**
+3. **[Proceed with Quantization](#quantize-model):**
    - Once the model is reparameterized, proceed with the quantization process. This involves applying the Quantization-Aware Training technique to fine-tune the model's weights, taking into account the quantization effects.
+
+4. **[Eval Pytorch](#evaluate-using-pytorch)  / [Eval TensorRT](#evaluate-using-tensorrt):**
+   - After quantization, it's crucial to validate the performance of the quantized model to ensure that it meets your requirements in terms of accuracy and efficiency.
+   - Test the quantized model thoroughly at both stages: during the quantization phase using PyTorch and after training using TensorRT.
+   - Please note that different versions of TensorRT may yield varying results and perfomance
+
+5. **Export to ONNX:**
+   - [Export ONNX](#export-onnx)
+   - Once you are satisfied with the quantized model's performance, you can proceed to export it to ONNX format.
+
+6. **Deploy with TensorRT:**
+   - [Deployment with TensorRT](#deployment-with-tensorrt)
+   - After exporting to ONNX, you can deploy the model using TensorRT for hardware-accelerated inference on platforms supporting TensorRT.
+
+ 
+
+
+
+
 
 By following these steps, you can successfully perform Quantization-Aware Training (QAT) using fine-tuning with your YOLOv9 model.
 
@@ -76,6 +95,7 @@ Release 23.02 is based on CUDA 12.0.1, which requires NVIDIA Driver release 525 
 
 docker pull nvcr.io/nvidia/pytorch:23.02-py3
 
+## clone original yolov9
 git clone https://github.com/WongKinYiu/yolov9.git
 
 docker run --gpus all  \
@@ -95,7 +115,6 @@ cd /
 git clone https://github.com/levipereira/yolov9-qat.git
 cd /yolov9-qat
 ./patch_yolov9.sh /yolov9
-cd /yolov9
 ```
 
 2. Install dependencies
@@ -111,6 +130,7 @@ $ cd /yolov9
 $ bash scripts/get_coco.sh
 $ wget https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-c-converted.pt
 ```
+
 
 ## Usage
 
@@ -149,7 +169,7 @@ This command is used to perform PTQ/QAT finetuning.
 
 ## Sensitive Layer Analysis
 ```bash
-python qat.py sensitive --weights yolov9-c.pt --data coco.yaml --hyp hyp.scratch-high.yaml ...
+python qat.py sensitive --weights yolov9-c.pt --data data/coco.yaml --hyp hyp.scratch-high.yaml ...
 ```
 
 ## Sensitive Command Arguments
@@ -173,6 +193,7 @@ This command is used for sensitive layer analysis.
 
 ## Evaluate QAT Model
 
+### Evaluate using Pytorch 
 ```bash
 python qat.py eval --weights yolov9-c.pt --data coco.yaml  
 ```
@@ -195,6 +216,14 @@ This command is used to perform evaluation on QAT Models.
 - `--exist-ok`: Flag to indicate if existing project/name should be overwritten.
 - `--use-pycocotools`: Generate COCO annotation json format for the custom dataset.
 
+### Evaluate using TensorRT
+```bash
+./scripts/val_trt.sh <weights> <data yaml>  <image_size>
+
+./scripts/val_trt.sh runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt data/coco.yaml 640
+
+```
+
 # Export ONNX 
 The goal of exporting to ONNX is to deploy to TensorRT, not to ONNX runtime. So we only export fake quantized model into a form TensorRT will take. Fake quantization will be broken into a pair of QuantizeLinear/DequantizeLinear ONNX ops. TensorRT will take the generated ONNX graph, and execute it in int8 in the most optimized way to its capability.
 
@@ -208,3 +237,13 @@ python3 export_qat.py --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt
 python3 export_qat.py  --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.pt --include onnx_end2end
 ```
 
+## Deployment with Tensorrt
+```bash
+ /usr/src/tensorrt/bin/trtexec \
+  --onnx=runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.onnx \
+  --int8 --fp16  \
+  --workspace=102400 \
+  --minShapes=images:1x3x640x640 \
+  --optShapes=images:4x3x640x640 \
+  --maxShapes=images:8x3x672x672 \
+  --saveEngine=runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.engine
