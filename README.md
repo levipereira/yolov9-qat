@@ -52,7 +52,7 @@ In this section, we'll outline the steps to perform Quantization-Aware Training 
 
 ### Steps:
 
-1. **Train the Model Using [train.py](https://github.com/WongKinYiu/yolov9/blob/main/train.py):**
+1. **Train the Model Using [Training Session](https://github.com/WongKinYiu/yolov9/tree/main?tab=readme-ov-file#training):** 
    - Utilize the original implementation train.py to train your YOLOv9 model with your dataset and desired configurations.
    - Follow the training instructions provided in the original YOLOv9 repository to ensure proper training.
 
