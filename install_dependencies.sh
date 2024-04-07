@@ -22,7 +22,6 @@ pip install seaborn \
             onnxruntime==1.16.3 \
             ujson==5.9.0 \
             pycocotools==2.0.7 \
-            --no-cache-dir --force-reinstall
+            pycuda==2024.1     
 
-# Install specific version of Pillow with no cache directory and force reinstall
 pip install pillow==9.5.0 --no-cache-dir --force-reinstall
