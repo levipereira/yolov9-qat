@@ -195,7 +195,7 @@ This command is used for sensitive layer analysis.
 
 ### Evaluate using Pytorch 
 ```bash
-python qat.py eval --weights yolov9-c.pt --data coco.yaml  
+python3 qat.py eval --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt  --name eval_qat_yolov9
 ```
 ## Evaluation Command Arguments
 
