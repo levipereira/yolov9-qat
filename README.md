@@ -4,7 +4,7 @@ This repository contains an implementation of YOLOv9 with Quantization-Aware Tra
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.
 If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
-# Release Highlights:
+# Release Highlights
 - This release includes an upgrade from TensorRT 8 to TensorRT 10, ensuring compatibility with the CUDA version supported - by the latest NVIDIA Ada Lovelace GPUs.
 - The inference has been upgraded utilizing `enqueueV3` instead `enqueueV2`.<br>
 - To maintain legacy support for TensorRT 8, a [dedicated branch](https://github.com/levipereira/yolov9-qat/tree/TensorRT-8) has been created. <br>
