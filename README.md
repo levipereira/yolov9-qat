@@ -1,7 +1,15 @@
 # YOLOv9 QAT
+
 This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.
 If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
+
+# Release Highlights:
+- This release includes an upgrade from TensorRT 8 to TensorRT 10, ensuring compatibility with the CUDA version supported - by the latest NVIDIA Ada Lovelace GPUs.
+- The inference has been upgraded utilizing `enqueueV3` instead `enqueueV2`.<br>
+- To maintain legacy support for TensorRT 8, a [dedicated branch](https://github.com/levipereira/yolov9-qat/tree/TensorRT-8) has been created. <br>
+- We've added a new option `val_trt.sh --generate-graph` which enables [Graph Rendering](#generate-tensort-profiling-and-svg-image) functionality. This feature facilitates the creation of graphical representations of the engine plan in SVG image format. 
+
 
 ## Details
 - The files in this repository represent a patch that adds QAT functionality to the original [YOLOv9 repository](https://github.com/WongKinYiu/yolov9/).
@@ -118,9 +126,15 @@ cd /yolov9-qat
 ```
 
 2. Install dependencies
+
+- **This release upgrade TensorRT from 8.5 to 10.0**
+- `./install_dependencies.sh --defaults  [--trex]` 
+- `--defaults` Install/Upgrade required packages 
+- `--trex` Install TensoRT Explorer (trex) on virtual env. Required only if you want generate Graph SVG for visualizing the profiling of a TensorRT engine. 
+
 ```bash
 cd /yolov9-qat
-./install_dependencies.sh
+./install_dependencies.sh --defaults
 cd /yolov9
 ```
 
@@ -217,11 +231,20 @@ This command is used to perform evaluation on QAT Models.
 - `--use-pycocotools`: Generate COCO annotation json format for the custom dataset.
 
 ### Evaluate using TensorRT
+
 ```bash
 ./scripts/val_trt.sh <weights> <data yaml>  <image_size>
 
 ./scripts/val_trt.sh runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt data/coco.yaml 640
+```
 
+## Generate TensoRT Profiling and SVG image
+
+
+TensorRT Explorer can be installed by executing `./install_dependencies.sh --trex`.<br> This installation is necessary to enable the generation of Graph SV, allowing visualization of the profiling data for a TensorRT engine.
+
+```bash
+./scripts/val_trt.sh runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.pt data/coco.yaml 640 --generate-graph
 ```
 
 # Export ONNX 

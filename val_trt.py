@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 from tqdm import tqdm
-import warnings
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLO root directory
@@ -15,7 +14,6 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.common import DetectMultiBackend
 from utils.callbacks import Callbacks
 from utils.dataloaders import create_dataloader
 from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, check_img_size, check_requirements,
@@ -23,7 +21,7 @@ from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, chec
                            print_args, scale_boxes, xywh2xyxy, xyxy2xywh)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
-from utils.torch_utils import select_device, smart_inference_mode
+from utils.torch_utils import smart_inference_mode
 
 import time
 import pycuda.autoinit
@@ -31,8 +29,6 @@ import pycuda.driver as cuda
 import tensorrt as trt
 import cv2
 
-
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 class HostDeviceMem(object):
     def __init__(self, host_mem, device_mem):
@@ -45,37 +41,53 @@ class HostDeviceMem(object):
     def __repr__(self):
         return self.__str__()
 
-def do_inference(context, bindings, inputs, outputs, stream):
+## https://docs.nvidia.com/deeplearning/tensorrt/migration-guide/index.html 
+
+def do_inference(context, inputs, outputs, stream):
     # Transfer input data to the GPU.
     [cuda.memcpy_htod_async(inp.device, inp.host, stream) for inp in inputs]
+
     # Run inference.
-    context.execute_async_v2(bindings=bindings, stream_handle=stream.handle)
+    context.execute_async_v3(stream_handle=stream.handle)
+
     # Transfer predictions back from the GPU.
     [cuda.memcpy_dtoh_async(out.host, out.device, stream) for out in outputs]
+
     # Synchronize the stream
     stream.synchronize()
+
     # Return only the host outputs.
     return [out.host for out in outputs]
 
+
 def allocate_buffers(engine):
+    '''
+    Allocates all buffers required for an engine, i.e. host/device inputs/outputs.
+    '''
     inputs = []
     outputs = []
     bindings = []
     stream = cuda.Stream()
-    for binding in engine:
-        size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
-        #print("binding shape: ", engine.get_binding_shape(binding))
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
+
+    for i in range(engine.num_io_tensors):
+        tensor_name = engine.get_tensor_name(i)
+        size = trt.volume(engine.get_tensor_shape(tensor_name)) 
+        dtype = trt.nptype(engine.get_tensor_dtype(tensor_name))
+
         # Allocate host and device buffers
-        host_mem = cuda.pagelocked_empty(size, dtype)
+        host_mem = cuda.pagelocked_empty(size, dtype) # page-locked memory buffer (won't swapped to disk)
         device_mem = cuda.mem_alloc(host_mem.nbytes)
-        # Append the device buffer to device bindings.
+
+        # Append the device buffer address to device bindings. 
+        # When cast to int, it's a linear index into the context's memory (like memory address). 
         bindings.append(int(device_mem))
-        # Append to the appropriate list.
-        if engine.binding_is_input(binding):
+
+       # Append to the appropriate input/output list.
+        if engine.get_tensor_mode(tensor_name) == trt.TensorIOMode.INPUT:
             inputs.append(HostDeviceMem(host_mem, device_mem))
         else:
             outputs.append(HostDeviceMem(host_mem, device_mem))
+
     return inputs, outputs, bindings, stream
 
 def save_one_txt(predn, save_conf, shape, file):
@@ -164,10 +176,15 @@ def run(
     engine = runtime.deserialize_cuda_engine(open(engine_file, 'rb') .read())
     inputs, outputs, bindings, stream = allocate_buffers(engine)
     
-    inputshape = [engine.get_binding_shape(binding) for binding in engine][0]
+    inputshape = [engine.get_tensor_shape(binding) for binding in engine][0]
     imgsz=inputshape[3] - stride  ## set imgz from engine
-    outputshape = [engine.get_binding_shape(binding) for binding in engine][1]
+    outputshape = [engine.get_tensor_shape(binding) for binding in engine][1]
+
     context = engine.create_execution_context()
+    
+    for i in range(engine.num_io_tensors):
+        context.set_tensor_address(engine.get_tensor_name(i), bindings[i])
+
     # Initialize/load model and set device
     training = False
     device = torch.device("cpu")
@@ -226,7 +243,7 @@ def run(
         # Run model
         with dt[1]:
             inputs[0].host = input_image.data.numpy()
-            trt_outputs = do_inference(context, bindings=bindings, inputs=inputs, outputs=outputs, stream = stream)
+            trt_outputs = do_inference(context, inputs=inputs, outputs=outputs, stream = stream)
             preds = torch.Tensor(trt_outputs[0].reshape(outputshape))
 
 
