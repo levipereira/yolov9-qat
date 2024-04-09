@@ -63,6 +63,14 @@ class QuantAdd(torch.nn.Module, quant_nn_utils.QuantMixin):
             return self._input0_quantizer(x) + self._input1_quantizer(y)
         return x + y
 
+class QuantADownChunk(torch.nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        self.c = c
+    def forward(self, x, chunks, dims):
+        return torch.split(self._input0_quantizer(x), (self.c, self.c), dims)
+    
 class QuantUpsample(torch.nn.Module): 
         def __init__(self, size, scale_factor, mode):
             super().__init__()
@@ -224,7 +232,18 @@ def get_attr_with_path(m, path):
         return sub_attr(value, names[1:])
     return sub_attr(m, path.split("."))
 
-
+def adown_quant_forward(self, x):
+    quantizer = quant_nn.TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+    if hasattr(self, "adownchunkop"):
+        quant_input_x = quantizer(x)
+        x = torch.nn.functional.avg_pool2d(quant_input_x, 2, 1, 0, False, True)
+        x1,x2 = self.adownchunkop(x, 2, 1)
+        x1 = self.cv1(x1)
+        quant_input_x2 = quantizer(x2)
+        x2 = torch.nn.functional.max_pool2d(quant_input_x2, 3, 2, 1)
+        x2 = self.cv2(x2)
+        return torch.cat((x1, x2), 1)
+    
 def repnbottleneck_quant_forward(self, x):
     if hasattr(self, "repaddop"):
         return self.repaddop(x, self.cv2(self.cv1(x))) if self.add else self.cv2(self.cv1(x))
@@ -268,6 +287,13 @@ def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Calla
 
 def replace_custom_module_forward(model):
     for name, module  in model.named_modules():
+        
+        if module.__class__.__name__ == "ADown":
+            if not hasattr(module, "adownchunkop"):
+                print(f"Add ADownQuantChunk to {name}")
+                module.adownchunkop = QuantADownChunk(module.c)
+            module.__class__.forward = adown_quant_forward
+
         if module.__class__.__name__ == "RepNBottleneck":
             if module.add:
                 if not hasattr(module, "repaddop"):
