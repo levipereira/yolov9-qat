@@ -343,7 +343,6 @@ Application Memory Clock Rate: 10.501 GHz
 ## Output Details
 - `Latency`: refers to the [min, max, mean, median, 99% percentile] of the engine latency measurements, when timing the engine w/o profiling layers.
 - `Throughput`: is measured in query (inference) per second (QPS).
-- ` Total Inferences` : is measured in `Throughput  * Batch Size` inferences per second (IPS)
 
 ## YOLOv9-C QAT
 ## Batch Size 1
