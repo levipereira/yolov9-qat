@@ -74,6 +74,7 @@ else
     trtexec --onnx="${onnx}" \
             --saveEngine="${trt_engine}" \
             --fp16 --int8 \
+            --useCudaGraph \
             --minShapes=images:$shape \
             --optShapes=images:$shape \
             --maxShapes=images:$shape  \

@@ -16,19 +16,17 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from utils.callbacks import Callbacks
 from utils.dataloaders import create_dataloader
-from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, check_img_size, check_requirements,
+from utils.general import (LOGGER, TQDM_BAR_FORMAT, Profile, check_dataset, check_requirements,
                            check_yaml, coco80_to_coco91_class, colorstr, increment_path, non_max_suppression,
                            print_args, scale_boxes, xywh2xyxy, xyxy2xywh)
 from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import smart_inference_mode
 
-import time
+
 import pycuda.autoinit
 import pycuda.driver as cuda
 import tensorrt as trt
-import cv2
-
 
 class HostDeviceMem(object):
     def __init__(self, host_mem, device_mem):
@@ -169,6 +167,7 @@ def run(
         plots=True,
         callbacks=Callbacks(),
         compute_loss=None,
+        prefix=colorstr('VAL-TRT:')
 ):
     stride=32
     logger = trt.Logger(trt.Logger.INFO)
@@ -367,6 +366,10 @@ def run(
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+
+    eval_mp, eval_mr, eval_map50, eval_map = round(mp, 4), round(mr, 4), round(map50, 4), round(map, 4)
+    LOGGER.info(f'\n{prefix} Eval TRT - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}')
+    
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 

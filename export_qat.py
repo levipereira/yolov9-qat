@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import torch
 from torch.utils.mobile_optimizer import optimize_for_mobile
-
+import onnx_graphsurgeon as gs
 
 import models.quantize as quantize
 
@@ -32,8 +32,10 @@ from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, Profile, check_dataset, check_img_size, check_requirements, check_version,
                            check_yaml, colorstr, file_size, get_default_args, print_args, url2file, yaml_save)
 from utils.torch_utils import select_device, smart_inference_mode
+from models.quantize import remove_redundant_qdq_model
 
 MACOS = platform.system() == 'Darwin'  # macOS environment
+
 
 
 def export_formats():
@@ -117,21 +119,22 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
     if is_model_qat:
         warnings.filterwarnings("ignore")
         LOGGER.info(f'{prefix} Model QAT Detected ...')
+        quant_nn.TensorQuantizer.use_fb_fake_quant = True
+        model.eval()
+        model.model[-1].concat = True
         quantize.initialize()
         quantize.replace_custom_module_forward(model)
-        quant_nn.TensorQuantizer.use_fb_fake_quant = True
-        model.float()
         with torch.no_grad():
             torch.onnx.export(
-                model.cpu() if dynamic else model,  # --dynamic only compatible with cpu
-                im.cpu() if dynamic else im,
+                model, 
+                im, 
                 f,
                 verbose=False,
                 opset_version=13,
                 do_constant_folding=True,
                 input_names=['images'],
                 output_names=output_names,
-                dynamic_axes=dynamic or None)
+                dynamic_axes=dynamic)
 
     else: 
         torch.onnx.export(
@@ -154,7 +157,6 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
     for k, v in d.items():
         meta = model_onnx.metadata_props.add()
         meta.key, meta.value = k, str(v)
-    onnx.save(model_onnx, f)
 
     # Simplify
     if simplify:
@@ -169,6 +171,10 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
             onnx.save(model_onnx, f)
         except Exception as e:
             LOGGER.info(f'{prefix} simplifier failure: {e}')
+
+    LOGGER.info(f'{prefix} Removing redundant Q/DQ layer with onnx_graphsurgeon {gs.__version__}...')
+    remove_redundant_qdq_model(model_onnx, f) 
+    model_onnx = onnx.load(f)
     return f, model_onnx
     
 
@@ -208,10 +214,11 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
     
     if is_model_qat:
         warnings.filterwarnings("ignore")
+        model.eval()
+        model.model[-1].concat = True
         quantize.initialize()
         quantize.replace_custom_module_forward(model)
-        model.float()
-        quant_nn.TensorQuantizer.use_fb_fake_quant = True
+        
         LOGGER.info(f'{prefix} Model QAT Detected ...')
         model.eval()
         with torch.no_grad():
@@ -258,6 +265,11 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
         # print(onnx.helper.printable_graph(onnx_model.graph))  # print a human readable model
         onnx.save(model_onnx,f)
         print('ONNX export success, saved as %s' % f)
+
+    LOGGER.info(f'{prefix} Removing redundant Q/DQ layer with onnx_graphsurgeon {gs.__version__}...')
+    remove_redundant_qdq_model(model_onnx, f) 
+    model_onnx = onnx.load(f)
+
     return f, model_onnx
 
 

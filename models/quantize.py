@@ -32,6 +32,7 @@ from copy import deepcopy
 import torch
 import torch.optim as optim
 from torch.cuda import amp
+import torch.nn.functional as F
 
 # Pytorch Quantization
 from pytorch_quantization import nn as quant_nn
@@ -41,11 +42,10 @@ from pytorch_quantization.tensor_quant import QuantDescriptor
 from pytorch_quantization import quant_modules
 from absl import logging as quant_logging
 
-import torch.nn.functional as F
+import onnx_graphsurgeon as gs
 
-from utils.general import (LOGGER,colorstr)
-                           
-# Custom Rules
+from utils.general import (check_requirements, LOGGER,colorstr)
+
 from models.quantize_rules import find_quantizer_pairs
 
 class QuantAdd(torch.nn.Module, quant_nn_utils.QuantMixin):
@@ -63,6 +63,23 @@ class QuantAdd(torch.nn.Module, quant_nn_utils.QuantMixin):
             return self._input0_quantizer(x) + self._input1_quantizer(y)
         return x + y
 
+
+class QuantADownChunk(torch.nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        self.c = c
+    def forward(self, x, chunks, dims):
+        return torch.split(self._input0_quantizer(x), (self.c, self.c), dims)
+    
+""" class QuantRepNCSPELAN4Chunk(torch.nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        self.c = c
+    def forward(self, x, chunks, dims):
+        return torch.split(self._input0_quantizer(x), (self.c, self.c), dims) """
+       
 class QuantUpsample(torch.nn.Module): 
         def __init__(self, size, scale_factor, mode):
             super().__init__()
@@ -73,7 +90,8 @@ class QuantUpsample(torch.nn.Module):
             
         def forward(self, x):
             return F.interpolate(self._input_quantizer(x), self.size, self.scale_factor, self.mode) 
-        
+
+             
 class QuantConcat(torch.nn.Module): 
     def __init__(self, dim):
         super().__init__()
@@ -131,12 +149,75 @@ def initialize():
     quant_modules.initialize( )
     quant_desc_input = QuantDescriptor(calib_method="histogram")
     quant_nn.QuantConv2d.set_default_quant_desc_input(quant_desc_input)
-    quant_nn.QuantMaxPool2d.set_default_quant_desc_input(quant_desc_input)
-    quant_nn.QuantAvgPool2d.set_default_quant_desc_input(quant_desc_input)
     quant_nn.QuantLinear.set_default_quant_desc_input(quant_desc_input)
 
     quant_logging.set_verbosity(quant_logging.ERROR)
 
+
+def remove_redundant_qdq_model(onnx_model, f):
+    check_requirements('onnx')
+    import onnx
+
+    graph = gs.import_onnx(onnx_model)
+    nodes = graph.nodes
+
+
+    
+    mul_nodes = [node for node in nodes if node.op == "Mul" and node.i(0).op == "Conv" and node.i(1).op == "Sigmoid"]
+
+    many_outputs_mul_nodes = []
+
+    for node in mul_nodes: 
+        try:
+            for i in range(99):
+                node.o(i)
+        except:
+            if i > 1:
+                mul_nodename_outnum = {"node": node, "out_num": i}
+                many_outputs_mul_nodes.append(mul_nodename_outnum)
+    
+
+    for node_dict in many_outputs_mul_nodes:
+        if node_dict["out_num"] == 2:
+            if node_dict["node"].o(0).op == "QuantizeLinear" and node_dict["node"].o(1).op == "QuantizeLinear":
+                if node_dict["node"].o(1).o(0).o(0).op == "Concat":
+                    concat_dq_out_name = node_dict["node"].o(1).o(0).outputs[0].name
+                    for i, concat_input in enumerate(node_dict["node"].o(1).o(0).o(0).inputs):
+                        if concat_input.name == concat_dq_out_name:
+                            node_dict["node"].o(1).o(0).o(0).inputs[i] = node_dict["node"].o(0).o(0).outputs[0] 
+                else:
+                    node_dict["node"].o(1).o(0).o(0).inputs[0] = node_dict["node"].o(0).o(0).outputs[0] 
+                    
+
+            # elif node_dict["node"].o(0).op == "QuantizeLinear" and node_dict["node"].o(1).op == "Concat":
+            #     concat_dq_out_name = node_dict["node"].outputs[0].outputs[0].inputs[0].name
+            #     for i, concat_input in enumerate(node_dict["node"].outputs[0].outputs[1].inputs):
+            #         if concat_input.name == concat_dq_out_name:
+            #             print("elif", concat_input.name, concat_dq_out_name )
+            #             print("will-be", node_dict["node"].outputs[0].outputs[1].inputs[i], node_dict["node"].outputs[0].outputs[0].o().outputs[0]  )
+            #             node_dict["node"].outputs[0].outputs[1].inputs[i] = node_dict["node"].outputs[0].outputs[0].o().outputs[0] 
+
+       
+    add_nodes = [node for node in nodes if node.op == "Add"]
+    many_outputs_add_nodes = []
+    for node in add_nodes: 
+        try:
+            for i in range(99):
+                node.o(i)
+        except:
+            if i > 1 and node.o().op == "QuantizeLinear":
+                add_nodename_outnum = {"node": node, "out_num": i}
+                many_outputs_add_nodes.append(add_nodename_outnum)
+
+
+    for node_dict in many_outputs_add_nodes:
+        if node_dict["node"].outputs[0].outputs[0].op == "QuantizeLinear" and node_dict["node"].outputs[0].outputs[1].op == "Concat":
+            concat_dq_out_name = node_dict["node"].outputs[0].outputs[0].inputs[0].name
+            for i, concat_input in enumerate(node_dict["node"].outputs[0].outputs[1].inputs):
+                if concat_input.name == concat_dq_out_name:
+                    node_dict["node"].outputs[0].outputs[1].inputs[i] = node_dict["node"].outputs[0].outputs[0].o().outputs[0]  
+
+    onnx.save(gs.export_onnx(graph), f)
 
 def transfer_torch_to_quantization(nninstance : torch.nn.Module, quantmodule):
     quant_instance = quantmodule.__new__(quantmodule)
@@ -224,10 +305,20 @@ def get_attr_with_path(m, path):
         return sub_attr(value, names[1:])
     return sub_attr(m, path.split("."))
 
+""" def repncspelan4_qaunt_forward(self, x):
+     if hasattr(self, "repncspchunkop"):
+         y = list(self.repncspchunkop(self.cv1(x), 2, 1))
+         y.extend((m(y[-1])) for m in [self.cv2, self.cv3])
+         return self.cv4(torch.cat(y, 1))
+     else:
+         y = list(self.cv1(x).split((self.c, self.c), 1))
+         y.extend(m(y[-1]) for m in [self.cv2, self.cv3])
+         return self.cv4(torch.cat(y, 1)) """
 
-def repnbottleneck_quant_forward(self, x):
-    if hasattr(self, "repaddop"):
-        return self.repaddop(x, self.cv2(self.cv1(x))) if self.add else self.cv2(self.cv1(x))
+        
+def repbottleneck_quant_forward(self, x):
+    if hasattr(self, "addop"):
+        return self.addop(x, self.cv2(self.cv1(x))) if self.add else self.cv2(self.cv1(x))
     return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
 
 def upsample_quant_forward(self, x):
@@ -253,8 +344,8 @@ def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Calla
             if module.add:
                 print(f"Rules: {name}.add match to {name}.cv1")
                 major = module.cv1.conv._input_quantizer
-                module.repaddop._input0_quantizer = major
-                module.repaddop._input1_quantizer = major
+                module.addop._input0_quantizer = major
+                module.addop._input1_quantizer = major
 
         if  isinstance(module, torch.nn.MaxPool2d):
                 quant_conv_desc_input = QuantDescriptor(num_bits=8, calib_method='histogram')
@@ -266,15 +357,38 @@ def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Calla
                                                         quant_desc_input = quant_conv_desc_input)
                 set_module(model, name, quant_maxpool2d)
 
+def adown_quant_forward(self, x):
+    quantizer = quant_nn.TensorQuantizer(quant_nn.QuantLinear.default_quant_desc_input)
+    if hasattr(self, "adownchunkop"):
+        quant_input_x = quantizer(x)
+        x = torch.nn.functional.avg_pool2d(quant_input_x, 2, 1, 0, False, True)
+        x1,x2 = self.adownchunkop(x, 2, 1)
+        x1 = self.cv1(x1)
+        x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
+        x2 = self.cv2(x2)
+        return torch.cat((x1, x2), 1)
+    
 def replace_custom_module_forward(model):
     for name, module  in model.named_modules():
+        """ if module.__class__.__name__ == "RepNCSPELAN4":
+             if not hasattr(module, "repncspelan4chunkop"):
+                 print(f"Add RepNCSPELAN4QuantChunk to {name}")
+                 module.repncspchunkop = QuantRepNCSPELAN4Chunk(module.c)
+             module.__class__.forward = repncspelan4_qaunt_forward """
+
+        if module.__class__.__name__ == "ADown":
+            if not hasattr(module, "adownchunkop"):
+                print(f"Add ADownQuantChunk to {name}")
+                module.adownchunkop = QuantADownChunk(module.c)
+            module.__class__.forward = adown_quant_forward
+
         if module.__class__.__name__ == "RepNBottleneck":
             if module.add:
-                if not hasattr(module, "repaddop"):
+                if not hasattr(module, "addop"):
                     print(f"Add QuantAdd to {name}")
-                    module.repaddop = QuantAdd(module.add)
-                module.__class__.forward = repnbottleneck_quant_forward
-        
+                    module.addop = QuantAdd(module.add)
+                module.__class__.forward = repbottleneck_quant_forward
+
         if module.__class__.__name__ == "Concat":
             if not hasattr(module, "concatop"):
                 print(f"Add QuantConcat to {name}")
@@ -286,8 +400,6 @@ def replace_custom_module_forward(model):
                 print(f"Add QuantUpsample to {name}")
                 module.upsampleop = QuantUpsample(module.size, module.scale_factor, module.mode)
             module.__class__.forward = upsample_quant_forward
-        
-   
             
 def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
 
@@ -340,7 +452,7 @@ def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
 
 
 def finetune(
-    model : torch.nn.Module, train_dataloader, no_last_layer, per_epoch_callback : Callable = None, preprocess : Callable = None,
+    model : torch.nn.Module, train_dataloader,  per_epoch_callback : Callable = None, preprocess : Callable = None,
     nepochs=10, early_exit_batchs_per_epoch=1000, lrschedule : Dict = None, fp16=True, learningrate=1e-5,
     supervision_policy : Callable = None, prefix=colorstr('QAT:')
 ):
@@ -355,18 +467,12 @@ def finetune(
     quant_lossfn = torch.nn.MSELoss()
     device       = next(model.parameters()).device
 
-    if no_last_layer:
-        last_layer_index = len(model.model) - 1
-        last_layer = model.model[last_layer_index]
-        if have_quantizer(last_layer):
-            LOGGER.info(f'{prefix} Quantization disabled for Last Layer model.{last_layer_index}')
-            disable_quantization(last_layer).apply()
 
     if lrschedule is None:
         lrschedule = {
             0: 1e-6,
-            3: 1e-5,
-            6: 1e-6
+            6: 1e-6,
+            7: 1e-6
         }
 
 
