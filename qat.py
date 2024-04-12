@@ -167,13 +167,14 @@ def export_onnx(model, file, im, opset=12, dynamic=False, prefix=colorstr('QAT O
             m.export = False
     
 
-def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, eval_pycocotools, prefix=colorstr('QAT:')):
+def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, prefix=colorstr('QAT:')):
     
     if not Path(weights).exists():
         LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
         exit(1)
         
     quantize.initialize()
+    
     with torch_distributed_zero_first(LOCAL_RANK):
         data_dict = check_dataset(data)
 
@@ -181,8 +182,6 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
     w.mkdir(parents=True, exist_ok=True)   # make dir
 
     is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
-    if is_coco and not eval_pycocotools:
-        is_coco=False
     
     nc = int(data_dict['nc'])  # number of classes
     single_cls = False if nc > 1 else True
@@ -195,15 +194,13 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
     result_eval_ptq=None
     result_eval_qat_best=None
 
-    
-
     device  = torch.device(device)
     model   = load_model(weights, device)
 
     if not isinstance(model, DetectionModel):
-            model_name=model.__class__.__name__
-            LOGGER.info(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
-            exit(1)
+        model_name=model.__class__.__name__
+        LOGGER.info(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
+        exit(1)
 
     stride = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(imgsz, s=stride)  # check image size
@@ -228,7 +225,8 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
         ignore_policy=f"model\.9999999999\.cv\d+\.\d+\.\d+(\.conv)?"   
     """ 
     ### End ####### 
-        
+    
+    
     quantize.replace_custom_module_forward(model)
     quantize.replace_to_quantization_module(model, ignore_policy="disabled")  ## disabled because was not implemented 
     quantize.apply_custom_rules_to_quantizer(model, lambda model, file: export_onnx(model, file, im))
@@ -250,13 +248,6 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
         
         LOGGER.info(f'\n{prefix} Evaluating PTQ...')
         model_eval = deepcopy(model).eval()  
-        
-        if no_last_layer:
-            last_layer_index = len(model_eval.model) - 1
-            last_layer = model_eval.model[last_layer_index]
-            if quantize.have_quantizer(last_layer):
-                LOGGER.info(f'{prefix} Quantization disabled for Last Layer model.{last_layer_index}')
-                quantize.disable_quantization(last_layer).apply()
         
         result_eval_ptq = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
         eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in result_eval_ptq)
@@ -295,7 +286,7 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
         LOGGER.info('-' * 55)  
         for idx, eval_r in enumerate(eval_results):
             if eval_r is not None:
-                eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in eval_r)
+                eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 3) for x in eval_r)
                 if idx == 0:
                     LOGGER.info(f'Origin     | {eval_map:<8} | {eval_map50:<8} | {eval_mp:<10} | {eval_mr:<8}')
                 if idx == 1:
@@ -327,11 +318,11 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, no_last_layer, s
         return impl
 
     quantize.finetune(
-        model, train_dataloader, no_last_layer, per_epoch, early_exit_batchs_per_epoch=iters, 
+        model, train_dataloader, per_epoch, early_exit_batchs_per_epoch=iters, 
         preprocess=preprocess, supervision_policy=supervision_policy())
 
 def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_dir, num_image, prefix=colorstr('QAT ANALYSIS:')):
-    quantize.initialize()
+
     if not Path(weights).exists():
         LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
         exit(1)
@@ -374,11 +365,17 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
     stride = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(imgsz, s=stride)  # check image size
 
+    exp_imgsz=[imgsz,imgsz]
+    gs = int(max(model.stride))  # grid size (max stride)
+    exp_imgsz = [check_img_size(x, gs) for x in exp_imgsz]  # verify img_size are gs-multiples
+    im = torch.zeros(batch_size, 3, *exp_imgsz).to(device)  # image size(1,3,320,192) BCHW iDetection
+
 
     train_dataloader = create_train_dataloader(train_path, imgsz, batch_size, single_cls, stride, hyp)
     val_dataloader   = create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride)
-
-    quantize.replace_to_quantization_module(model)
+    quantize.initialize()
+    quantize.replace_custom_module_forward(model)
+    quantize.replace_to_quantization_module(model, ignore_policy="disabled")  ## disabled because was not implemented 
     quantize.calibrate_model(model, train_dataloader, device)
 
     report_file=os.path.join(save_dir , "summary-sensitive-analysis.json")
@@ -491,11 +488,9 @@ if __name__ == "__main__":
     qat.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     qat.add_argument("--iters", type=int, default=200, help="iters per epoch")
     qat.add_argument('--seed', type=int, default=57, help='Global training seed')
-    qat.add_argument("--no-last-layer", action="store_true", help="Disable QAT on Last Layer to improve mAP but also increase Latency")
     qat.add_argument("--supervision-stride", type=int, default=1, help="supervision stride")
     qat.add_argument("--no-eval-origin", action="store_false", help="Disable eval for origin model")
     qat.add_argument("--no-eval-ptq", action="store_false", help="Disable eval for ptq model")
-    qat.add_argument("--eval-pycocotools", action="store_true", help="Evalution using Pycocotools. Valid only for COCO Dataset")
 
     sensitive = subps.add_parser("sensitive", help="Sensitive layer analysis")
     sensitive.add_argument('--weights', type=str, default=ROOT / 'runs/models_original/yolov9-c.pt', help='Weights path (.pt)')
@@ -520,8 +515,6 @@ if __name__ == "__main__":
     testcmd.add_argument('--project', default=ROOT / 'runs/qat_eval', help='save to project/name')
     testcmd.add_argument('--name', default='exp', help='save to project/name')
     testcmd.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
-    testcmd.add_argument("--use-pycocotools", action="store_true", help="Generate COCO annotation json format for the custom dataset")
-
 
     opt = parser.parse_args()
     if opt.cmd == "quantize":
@@ -531,9 +524,9 @@ if __name__ == "__main__":
 
         run_quantize(
             opt.weights, opt.data, opt.imgsz, opt.batch_size, 
-            opt.hyp, opt.device, opt.no_last_layer, Path(opt.save_dir), 
+            opt.hyp, opt.device, Path(opt.save_dir), 
              opt.supervision_stride, opt.iters,
-            opt.no_eval_origin, opt.no_eval_ptq, opt.eval_pycocotools
+            opt.no_eval_origin, opt.no_eval_ptq
         )
 
     elif opt.cmd == "sensitive":
@@ -548,7 +541,7 @@ if __name__ == "__main__":
         print(opt)
         run_eval(opt.weights, opt.device, opt.data, 
                  opt.imgsz, opt.batch_size, opt.save_dir, 
-                 opt.conf_thres, opt.iou_thres, opt.use_pycocotools
+                 opt.conf_thres, opt.iou_thres 
                  )
     else:
         parser.print_help()
