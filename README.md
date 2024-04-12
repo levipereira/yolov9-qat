@@ -27,20 +27,21 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
  
  **YOLOv9-C**
 
-### Evaluation Comparison 
-
-| Eval Model           | AP   | AP50 | Precision | Recall |
-|----------------------|------|------|-----------|--------|
-| **INT8 (TensorRT)** vs **Origin (Pytorch)** |       |      |          |        |
-|                      | -0.002 | -0.004 | +0.003 | -0.007 |
-
-
 ### Evaluation Results
 | Eval Model | AP     | AP50   | Precision | Recall |
 |------------|--------|--------|-----------|--------|
 | **Origin (Pytorch)**     | 0.529 | 0.699  | 0.743    | 0.634  |
 | **INT8 (Pytorch)** | 0.529 | 0.702 | 0.747    | 0.629 |
 | **INT8 (TensorRT)**   | 0.527  | 0.695  | 0.746     | 0.627   |
+
+### Evaluation Comparison 
+| Eval Model           | AP   | AP50 | Precision | Recall |
+|----------------------|------|------|-----------|--------|
+| **INT8 (TensorRT)** vs **Origin (Pytorch)** |       |      |          |        |
+|                      | -0.002 | -0.004 | +0.003 | -0.007 |
+
+
+
 
 ## Latency/Throughput Report using only TensorRT
 
@@ -54,18 +55,6 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 | Device Global Memory      | 24207 MiB                    |
 | Application Compute Clock Rate | 2.58 GHz               |
 | Application Memory Clock Rate  | 10.501 GHz             |
-
-
-### Latency/Throughput Comparison 
-
-| Model Name                                       | Batch Size | Latency (99%) | Throughput (qps) | Total Inferences |
-|--------------------------------------------------|------------|----------------|------------------|------------------|
-| **INT8** vs **FP16**                |            |                |                  |                  |
-|                                                  | 1          | -20.8%         | +25.2%           | +25.2%           |
-|                                                  | 4          | -37.1%         | +57.7%           | +57.7%           |
-|                                                  | 8          | -41.1%         | +70.6%           | +70.6%           |
-|                                                  | 12         | -46.9%         | +79.8%           | +78.9%           |
-
 
 
 ### Latency/Throughput  
@@ -82,7 +71,14 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 |                 | 8          | 3.84 ms         | 261              | 2088                   |
 |                 | 12          | 5.59 ms         | 178              | 2136                   |
 
-
+### Latency/Throughput Comparison 
+| Model Name                                       | Batch Size | Latency (99%) | Throughput (qps) | Total Inferences |
+|--------------------------------------------------|------------|----------------|------------------|------------------|
+| **INT8** vs **FP16**                |            |                |                  |                  |
+|                                                  | 1          | -20.8%         | +25.2%           | +25.2%           |
+|                                                  | 4          | -37.1%         | +57.7%           | +57.7%           |
+|                                                  | 8          | -41.1%         | +70.6%           | +70.6%           |
+|                                                  | 12         | -46.9%         | +79.8%           | +78.9%           |
 
 
 
