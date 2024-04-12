@@ -91,7 +91,7 @@ def export_torchscript(model, im, file, optimize, prefix=colorstr('TorchScript:'
     return f, None
 
 
-#@try_export
+@try_export
 def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX:')):
     # YOLO ONNX export
     check_requirements('onnx')
