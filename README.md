@@ -15,7 +15,7 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 ## Release Highlights
 - This release includes an upgrade from TensorRT 8 to TensorRT 10, ensuring compatibility with the CUDA version supported - by the latest NVIDIA Ada Lovelace GPUs.
 - The inference has been upgraded utilizing `enqueueV3` instead `enqueueV2`.<br>
-- To maintain legacy support for TensorRT 8, a [dedicated branch](https://github.com/levipereira/yolov9-qat/tree/TensorRT-8) has been created. <br>
+- To maintain legacy support for TensorRT 8, a [dedicated branch](https://github.com/levipereira/yolov9-qat/tree/TensorRT-8) has been created. **Outdated** <br>
 - We've added a new option `val_trt.sh --generate-graph` which enables [Graph Rendering](#generate-tensort-profiling-and-svg-image) functionality. This feature facilitates the creation of graphical representations of the engine plan in SVG image format. 
 
 # Perfomance / Accuracy
