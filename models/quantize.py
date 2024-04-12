@@ -193,6 +193,24 @@ def remove_redundant_qdq_model(onnx_model, f):
                      if concat_input.name == concat_dq_out_name:
                          node_dict["node"].outputs[0].outputs[1].inputs[i] = node_dict["node"].outputs[0].outputs[0].o().outputs[0] 
 
+    add_nodes = [node for node in nodes if node.op == "Add"]
+    many_outputs_add_nodes = []
+    for node in add_nodes: 
+        try:
+            for i in range(99):
+                node.o(i)
+        except:
+            if i > 1 and node.o().op == "QuantizeLinear":
+                add_nodename_outnum = {"node": node, "out_num": i}
+                many_outputs_add_nodes.append(add_nodename_outnum)
+                
+    for node_dict in many_outputs_add_nodes:
+        if node_dict["node"].outputs[0].outputs[0].op == "QuantizeLinear" and node_dict["node"].outputs[0].outputs[1].op == "Concat":
+            concat_dq_out_name = node_dict["node"].outputs[0].outputs[0].inputs[0].name
+            for i, concat_input in enumerate(node_dict["node"].outputs[0].outputs[1].inputs):
+                if concat_input.name == concat_dq_out_name:
+                    node_dict["node"].outputs[0].outputs[1].inputs[i] = node_dict["node"].outputs[0].outputs[0].o().outputs[0]  
+                    
     onnx.save(gs.export_onnx(graph), f)
 
 def transfer_torch_to_quantization(nninstance : torch.nn.Module, quantmodule):
