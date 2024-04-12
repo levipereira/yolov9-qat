@@ -47,7 +47,7 @@ if $defaults; then
     dpkg -i nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4_1.0-1_amd64.deb || exit 1
     cp /var/nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4/nv-tensorrt-local-FBD8E82C-keyring.gpg /usr/share/keyrings/ || exit 1
     apt-get update || exit 1
-    apt-get install tensorrt onnx-graphsurgeon || exit 1
+    apt-get install -y tensorrt onnx-graphsurgeon || exit 1
     apt-get purge "nv-tensorrt-local-repo*" -y || exit 1
     rm -f nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4_1.0-1_amd64.deb
     # Upgrade pip
