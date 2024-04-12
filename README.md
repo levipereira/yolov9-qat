@@ -20,7 +20,7 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 
 # Perfomance / Accuracy
 
-[Full Report](#benchmark-using-tensorrt-10)
+[Full Report](#benchmark)
 
 
 ## Accuracy Report
@@ -303,7 +303,6 @@ python3 export_qat.py  --weights runs/qat/yolov9_qat/weights/qat_best_yolov9-c.p
   --saveEngine=runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted.engine
 ```
 
-<br><br>
 # Benchmark
 
 ```bash
