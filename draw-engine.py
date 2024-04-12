@@ -26,9 +26,8 @@
 This script generates an SVG diagram of the input engine graph SVG file.
 Note:
     THIS SCRIPT DEPENDS ON LIB: https://github.com/NVIDIA/TensorRT/tree/main/tools/experimental/trt-engine-explorer
-    this script requires graphviz which can be installed manually:
-    $ sudo apt-get --yes install graphviz
-    $ python3 -m pip install graphviz networkx
+    this script requires graphviz which can be installed:
+    $ /yolov9-qat/install_dependencies.sh --trex
 """
 
 import graphviz
@@ -43,7 +42,7 @@ def draw_engine(engine_json_fname: str, engine_profile_fname: str):
     if not graphviz_is_installed:
         print("graphviz is required but it is not installed.\n")
         print("To install on Ubuntu:")
-        print("sudo apt --yes install graphviz")
+        print("$ /yolov9-qat/install_dependencies.sh --trex")
         exit()
 
     plan = EnginePlan(engine_json_fname, engine_profile_fname)
