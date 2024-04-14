@@ -1,4 +1,4 @@
-# YOLOv9 QAT for NVIDA TensorRT
+# YOLOv9 QAT for TensorRT
 
 This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.<br>
