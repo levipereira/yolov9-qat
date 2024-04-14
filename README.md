@@ -1,7 +1,7 @@
-# YOLOv9 QAT
+# YOLOv9 QAT for NVIDA TensorRT
 
 This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
-This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.
+This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.<br>
 If you do not intend to deploy your model using TensorRT, it is recommended not to proceed with this implementation.
 
 - The files in this repository represent a patch that adds QAT functionality to the original [YOLOv9 repository](https://github.com/WongKinYiu/yolov9/).
@@ -11,7 +11,7 @@ If you do not intend to deploy your model using TensorRT, it is recommended not 
 
 We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
-Important:
+**Important**<br>
 🌟 We still have plenty of nodes to improve Q/DQ, and we rely on the community's contribution to enhance this project, benefiting us all. Let's collaborate and make it even better! 🚀
 
 ## Release Highlights
