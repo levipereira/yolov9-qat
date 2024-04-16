@@ -121,7 +121,6 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
         LOGGER.info(f'{prefix} Model QAT Detected ...')
         quant_nn.TensorQuantizer.use_fb_fake_quant = True
         model.eval()
-        model.model[-1].concat = True
         quantize.initialize()
         quantize.replace_custom_module_forward(model)
         with torch.no_grad():
@@ -178,7 +177,7 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
     return f, model_onnx
     
 
-@try_export
+#@try_export
 def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, labels, prefix=colorstr('ONNX END2END:')):
     # YOLO ONNX export
     check_requirements('onnx')
@@ -214,13 +213,12 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
     
     if is_model_qat:
         warnings.filterwarnings("ignore")
+        LOGGER.info(f'{prefix} Model QAT Detected ...')
+        quant_nn.TensorQuantizer.use_fb_fake_quant = True
         model.eval()
-        model.model[-1].concat = True
         quantize.initialize()
         quantize.replace_custom_module_forward(model)
         
-        LOGGER.info(f'{prefix} Model QAT Detected ...')
-        model.eval()
         with torch.no_grad():
             torch.onnx.export(model, 
                             im, 

@@ -411,7 +411,7 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
         print(f"Top{n}: Using fp16 {name}, ap = {ap:.5f}")
 
 
-def run_eval(weights, device, data, imgsz, batch_size, save_dir, conf_thres, iou_thres, eval_pycocotools, prefix=colorstr('QAT TEST:')):
+def run_eval(weights, device, data, imgsz, batch_size, save_dir, conf_thres, iou_thres, prefix=colorstr('QAT TEST:')):
     
     if not Path(weights).exists():
         LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
@@ -447,8 +447,6 @@ def run_eval(weights, device, data, imgsz, batch_size, save_dir, conf_thres, iou
         exit(1)
     
     is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
-    if is_coco and not eval_pycocotools:
-        is_coco=False
 
     stride = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(imgsz, s=stride)  # check image size
