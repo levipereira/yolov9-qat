@@ -306,7 +306,7 @@ Note: To test FP16 Models (such as Origin) remove flag `--int8`
 ```bash
 # Set variable batch_size  and model_path_no_ext
 export batch_size=4
-export model_path_no_ext=runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted
+export filepath_no_ext=runs/qat/yolov9_qat/weights/qat_best_yolov9-c-converted
 trtexec \
 	--onnx=${filepath_no_ext}.onnx \
 	--fp16 \
