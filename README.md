@@ -90,7 +90,7 @@ For those who are not familiar with QAT, I highly recommend watching this video:
 
 | Model Name      | Batch Size | Latency (99%) | Throughput (qps) | Total Inferences (IPS) |
 |-----------------|------------|----------------|------------------|------------------------|
-| **(FP16)** | 1          | 1.25 ms         | 803               | 803                    |
+| **(FP16) SiLU** | 1          | 1.25 ms         | 803               | 803                    |
 |                 | 4          | 3.37 ms         | 300              | 1200                   |
 |                 | 8          | 6.6 ms         | 153              | 1224                   |
 |                 | 12          | 10 ms         | 99              | 1188                   |
