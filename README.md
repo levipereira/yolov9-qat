@@ -12,11 +12,11 @@ If you do not intend to deploy your model using TensorRT, it is recommended not 
 
 We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
-**Important**<br>
-🌟 We still have plenty of nodes to improve Q/DQ, and we rely on the community's contribution to enhance this project, benefiting us all. Let's collaborate and make it even better! 🚀
-
-
 For those who are not familiar with QAT, I highly recommend watching this video:<br> [Quantization explained with PyTorch - Post-Training Quantization, Quantization-Aware Training](https://www.youtube.com/watch?v=0VdNflU08yA)
+
+**Important**<br>
+Currently, quantization is only available for object detection models. However, since quantization has the greatest impact on the YOLOv9 model's backbone and the backbone remains unchanged, quantization is essentially ready for all models yolov9 types. <br> Quantization support for segmentation models has not yet been released, as it requires the development of evaluation and the validation of quantization of last layers of the model. <br>
+🌟 We still have plenty of nodes to improve Q/DQ, and we rely on the community's contribution to enhance this project, benefiting us all. Let's collaborate and make it even better! 🚀 
 
 ## Release Highlights
 - This release includes an upgrade from TensorRT 8 to TensorRT 10, ensuring compatibility with the CUDA version supported - by the latest NVIDIA Ada Lovelace GPUs.
