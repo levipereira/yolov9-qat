@@ -35,17 +35,39 @@ For those who are not familiar with QAT, I highly recommend watching this video:
  **YOLOv9-C**
 
 ### Evaluation Results
+
+#### Activation SiLU
+
 | Eval Model | AP     | AP50   | Precision | Recall |
 |------------|--------|--------|-----------|--------|
 | **Origin (Pytorch)**     | 0.529 | 0.699  | 0.743    | 0.634  |
-| **INT8 (Pytorch)** | 0.529 | 0.702 | 0.747    | 0.629 |
-| **INT8 (TensorRT)**   | 0.527  | 0.695  | 0.746     | 0.627   |
+| **INT8 (Pytorch)** | 0.529 | 0.702 | 0.742    | 0.63 |
+| **INT8 (TensorRT)**   | 0.529  | 0.696  | 0.739     | 0.635   |
+
+
+#### Activation ReLU  
+
+| Eval Model | AP     | AP50   | Precision | Recall |
+|------------|--------|--------|-----------|--------|
+| **Origin (Pytorch)**     | 0.519 | 0.69  | 0.719    | 0.629  |
+| **INT8 (Pytorch)** | 0.518 | 0.69 | 0.726    | 0.625 |
+| **INT8 (TensorRT)**   | 0.517  | 0.685  | 0.723     | 0.626   |
 
 ### Evaluation Comparison 
+
+#### Activation SiLU
 | Eval Model           | AP   | AP50 | Precision | Recall |
 |----------------------|------|------|-----------|--------|
 | **INT8 (TensorRT)** vs **Origin (Pytorch)** |       |      |          |        |
-|                      | -0.002 | -0.004 | +0.003 | -0.007 |
+|                      | 0.000 | -0.003 | -0.004 | +0.001 |
+
+#### Activation ReLU
+| Eval Model           | AP   | AP50 | Precision | Recall |
+|----------------------|------|------|-----------|--------|
+| **INT8 (TensorRT)** vs **Origin (Pytorch)** |       |      |          |        |
+|                      | -0.002 | -0.005 | +0.004 | -0.003 |
+
+
 
 
 
@@ -68,26 +90,30 @@ For those who are not familiar with QAT, I highly recommend watching this video:
 
 | Model Name      | Batch Size | Latency (99%) | Throughput (qps) | Total Inferences (IPS) |
 |-----------------|------------|----------------|------------------|------------------------|
-| **(FP16)** | 1          | 1.25 ms         | 803               | 803                    |
+| **(FP16) SiLU** | 1          | 1.25 ms         | 803               | 803                    |
 |                 | 4          | 3.37 ms         | 300              | 1200                   |
 |                 | 8          | 6.6 ms         | 153              | 1224                   |
 |                 | 12          | 10 ms         | 99              | 1188                   |
 |                 |            |                |                  |                        |
-| **INT8**  | 1          | 0.99 ms         | 1006              | 1006                    |
-|                 | 4          | 2.12 ms         | 473              | 1892                   |
-|                 | 8          | 3.84 ms         | 261              | 2088                   |
-|                 | 12          | 5.59 ms         | 178              | 2136                   |
+| **INT8 (SiLU)**  | 1          | 0.97 ms         | 1030              | 1030                    |
+|                 | 4          | 2,06 ms         | 486              | 1944                   |
+|                 | 8          | 3.69 ms         | 271              | 2168                   |
+|                 | 12          | 5.36 ms         | 189              | 2268                   |
+|                 |            |                |                  |                        |
+| **INT8 (ReLU)**  | 1          | 0.87 ms         | 1150              | 1150                    |
+|                 | 4          | 1.78 ms         | 562              | 2248                   |
+|                 | 8          | 3.06 ms         | 327              | 2616                   |
+|                 | 12          | 4.63 ms         | 217              | 2604                   |
 
-### Latency/Throughput Comparison 
-| Model Name                                       | Batch Size | Latency (99%) | Throughput (qps) | Total Inferences |
-|--------------------------------------------------|------------|----------------|------------------|------------------|
-| **INT8** vs **FP16**                |            |                |                  |                  |
-|                                                  | 1          | -20.8%         | +25.2%           | +25.2%           |
-|                                                  | 4          | -37.1%         | +57.7%           | +57.7%           |
-|                                                  | 8          | -41.1%         | +70.6%           | +70.6%           |
-|                                                  | 12         | -46.9%         | +79.8%           | +78.9%           |
+## Latency/Throughput Comparison (INT8 vs FP16)
 
-
+| Model Name | Batch Size | Latency (99%) Change | Throughput (qps) Change | Total Inferences (IPS) Change |
+|---|---|---|---|---|
+| **INT8(SiLU)** vs **FP16** | 1 | -20.8% | +28.4% | +28.4% |
+| | 4 | -37.1% | +62.0% | +62.0% |
+| | 8 | -41.1% | +77.0% | +77.0% |
+| | 12 | -46.9% | +90.9% | +90.9% |
+ 
 
 ## QAT Training (Finetune)
 
@@ -348,59 +374,112 @@ Application Memory Clock Rate: 10.501 GHz
 - `Latency`: refers to the [min, max, mean, median, 99% percentile] of the engine latency measurements, when timing the engine w/o profiling layers.
 - `Throughput`: is measured in query (inference) per second (QPS).
 
-## YOLOv9-C QAT
+## YOLOv9-C QAT (SiLU)
 ## Batch Size 1
 ```bash
-=== Performance summary ===
-Throughput: 1005.92 qps
-Latency: min = 0.989258 ms, max = 0.995605 ms, mean = 0.992502 ms, median = 0.992188 ms, percentile(90%) = 0.993408 ms, percentile(95%) = 0.994141 ms, percentile(99%) = 0.994385 ms
-Enqueue Time: min = 0.00195312 ms, max = 0.00878906 ms, mean = 0.00237049 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00390625 ms
+Throughput: 1026.71 qps
+Latency: min = 0.969727 ms, max = 0.975098 ms, mean = 0.972263 ms, median = 0.972656 ms, percentile(90%) = 0.973145 ms, percentile(95%) = 0.973633 ms, percentile(99%) = 0.974121 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0195312 ms, mean = 0.00228119 ms, median = 0.00219727 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00390625 ms
 H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-GPU Compute Time: min = 0.989258 ms, max = 0.995605 ms, mean = 0.992502 ms, median = 0.992188 ms, percentile(90%) = 0.993408 ms, percentile(95%) = 0.994141 ms, percentile(99%) = 0.994385 ms
+GPU Compute Time: min = 0.969727 ms, max = 0.975098 ms, mean = 0.972263 ms, median = 0.972656 ms, percentile(90%) = 0.973145 ms, percentile(95%) = 0.973633 ms, percentile(99%) = 0.974121 ms
 D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-Total Host Walltime: 10.0018 s
-Total GPU Compute Time: 9.98557 s
- ```
+Total Host Walltime: 10.0019 s
+Total GPU Compute Time: 9.98417 s
+```
 
 ## BatchSize 4
 ```bash
 === Performance summary ===
-Throughput: 472.711 qps
-Latency: min = 2.10327 ms, max = 2.12207 ms, mean = 2.11386 ms, median = 2.11621 ms, percentile(90%) = 2.11865 ms, percentile(95%) = 2.11914 ms, percentile(99%) = 2.12012 ms
-Enqueue Time: min = 0.00195312 ms, max = 0.00732422 ms, mean = 0.00242147 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00390625 ms
+Throughput: 485.73 qps
+Latency: min = 2.05176 ms, max = 2.06152 ms, mean = 2.05712 ms, median = 2.05713 ms, percentile(90%) = 2.05908 ms, percentile(95%) = 2.05957 ms, percentile(99%) = 2.06055 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.00708008 ms, mean = 0.00230195 ms, median = 0.00219727 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00415039 ms
 H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-GPU Compute Time: min = 2.10327 ms, max = 2.12207 ms, mean = 2.11386 ms, median = 2.11621 ms, percentile(90%) = 2.11865 ms, percentile(95%) = 2.11914 ms, percentile(99%) = 2.12012 ms
+GPU Compute Time: min = 2.05176 ms, max = 2.06152 ms, mean = 2.05712 ms, median = 2.05713 ms, percentile(90%) = 2.05908 ms, percentile(95%) = 2.05957 ms, percentile(99%) = 2.06055 ms
 D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-Total Host Walltime: 10.004 s
-Total GPU Compute Time: 9.99644 s
+Total Host Walltime: 10.0035 s
+Total GPU Compute Time: 9.99553 s
 ```
 
 
 ## BatchSize 8
 ```bash
 === Performance summary ===
-Throughput: 260.891 qps
-Latency: min = 3.82227 ms, max = 3.84717 ms, mean = 3.83144 ms, median = 3.83105 ms, percentile(90%) = 3.83496 ms, percentile(95%) = 3.83594 ms, percentile(99%) = 3.83984 ms
-Enqueue Time: min = 0.00195312 ms, max = 0.00830078 ms, mean = 0.00251205 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00439453 ms
+Throughput: 271.107 qps
+Latency: min = 3.6792 ms, max = 3.69775 ms, mean = 3.68694 ms, median = 3.68652 ms, percentile(90%) = 3.69043 ms, percentile(95%) = 3.69141 ms, percentile(99%) = 3.69336 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0090332 ms, mean = 0.0023588 ms, median = 0.00231934 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00476074 ms
 H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-GPU Compute Time: min = 3.82227 ms, max = 3.84717 ms, mean = 3.83144 ms, median = 3.83105 ms, percentile(90%) = 3.83496 ms, percentile(95%) = 3.83594 ms, percentile(99%) = 3.83984 ms
+GPU Compute Time: min = 3.6792 ms, max = 3.69775 ms, mean = 3.68694 ms, median = 3.68652 ms, percentile(90%) = 3.69043 ms, percentile(95%) = 3.69141 ms, percentile(99%) = 3.69336 ms
 D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-Total Host Walltime: 10.0042 s
-Total GPU Compute Time: 10.0001 s
+Total Host Walltime: 10.0071 s
+Total GPU Compute Time: 10.0027 s
 ```
 ## BatchSize 12
 ```bash
 === Performance summary ===
-Throughput: 179.916 qps
-Latency: min = 5.53577 ms, max = 5.59412 ms, mean = 5.55652 ms, median = 5.55103 ms, percentile(90%) = 5.58081 ms, percentile(95%) = 5.58594 ms, percentile(99%) = 5.58984 ms
-Enqueue Time: min = 0.00195312 ms, max = 0.0078125 ms, mean = 0.00254577 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00457764 ms
+Throughput: 188.812 qps
+Latency: min = 5.25 ms, max = 5.37097 ms, mean = 5.2946 ms, median = 5.28906 ms, percentile(90%) = 5.32129 ms, percentile(95%) = 5.32593 ms, percentile(99%) = 5.36475 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0898438 ms, mean = 0.00248513 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00463867 ms
 H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-GPU Compute Time: min = 5.53577 ms, max = 5.59412 ms, mean = 5.55652 ms, median = 5.55103 ms, percentile(90%) = 5.58081 ms, percentile(95%) = 5.58594 ms, percentile(99%) = 5.58984 ms
+GPU Compute Time: min = 5.25 ms, max = 5.37097 ms, mean = 5.2946 ms, median = 5.28906 ms, percentile(90%) = 5.32129 ms, percentile(95%) = 5.32593 ms, percentile(99%) = 5.36475 ms
 D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
-Total Host Walltime: 10.0102 s
-Total GPU Compute Time: 10.0073 s
+Total Host Walltime: 10.01 s
+Total GPU Compute Time: 10.0068 s
 ```
 
+
+
+## YOLOv9-C QAT (ReLU)
+## Batch Size 1
+```bash
+ === Performance summary ===
+ Throughput: 1149.49 qps
+ Latency: min = 0.866211 ms, max = 0.871094 ms, mean = 0.868257 ms, median = 0.868164 ms, percentile(90%) = 0.869385 ms, percentile(95%) = 0.869629 ms, percentile(99%) = 0.870117 ms
+ Enqueue Time: min = 0.00195312 ms, max = 0.0180664 ms, mean = 0.00224214 ms, median = 0.00219727 ms, percentile(90%) = 0.00268555 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00390625 ms
+ H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ GPU Compute Time: min = 0.866211 ms, max = 0.871094 ms, mean = 0.868257 ms, median = 0.868164 ms, percentile(90%) = 0.869385 ms, percentile(95%) = 0.869629 ms, percentile(99%) = 0.870117 ms
+ D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ Total Host Walltime: 10.0018 s
+ Total GPU Compute Time: 9.98235 s
+```
+
+## BatchSize 4
+```bash
+=== Performance summary ===
+Throughput: 561.857 qps
+Latency: min = 1.77344 ms, max = 1.78418 ms, mean = 1.77814 ms, median = 1.77832 ms, percentile(90%) = 1.77979 ms, percentile(95%) = 1.78076 ms, percentile(99%) = 1.78174 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0205078 ms, mean = 0.00233018 ms, median = 0.0022583 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00439453 ms
+H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+GPU Compute Time: min = 1.77344 ms, max = 1.78418 ms, mean = 1.77814 ms, median = 1.77832 ms, percentile(90%) = 1.77979 ms, percentile(95%) = 1.78076 ms, percentile(99%) = 1.78174 ms
+D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+Total Host Walltime: 10.0043 s
+Total GPU Compute Time: 9.99494 s
+```
+
+
+## BatchSize 8
+```bash
+=== Performance summary ===
+Throughput: 326.86 qps
+Latency: min = 3.04126 ms, max = 3.06934 ms, mean = 3.05773 ms, median = 3.05859 ms, percentile(90%) = 3.06152 ms, percentile(95%) = 3.0625 ms, percentile(99%) = 3.06396 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0209961 ms, mean = 0.00235826 ms, median = 0.00231934 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00292969 ms, percentile(99%) = 0.00463867 ms
+H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+GPU Compute Time: min = 3.04126 ms, max = 3.06934 ms, mean = 3.05773 ms, median = 3.05859 ms, percentile(90%) = 3.06152 ms, percentile(95%) = 3.0625 ms, percentile(99%) = 3.06396 ms
+D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+Total Host Walltime: 10.0043 s
+Total GPU Compute Time: 9.99877 s
+```
+## BatchSize 12
+```bash
+=== Performance summary ===
+Throughput: 216.441 qps
+Latency: min = 4.60742 ms, max = 4.63184 ms, mean = 4.61852 ms, median = 4.61816 ms, percentile(90%) = 4.62305 ms, percentile(95%) = 4.62439 ms, percentile(99%) = 4.62744 ms
+Enqueue Time: min = 0.00195312 ms, max = 0.0131836 ms, mean = 0.00250633 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00341797 ms, percentile(99%) = 0.00531006 ms
+H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+GPU Compute Time: min = 4.60742 ms, max = 4.63184 ms, mean = 4.61852 ms, median = 4.61816 ms, percentile(90%) = 4.62305 ms, percentile(95%) = 4.62439 ms, percentile(99%) = 4.62744 ms
+D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+Total Host Walltime: 10.0074 s
+Total GPU Compute Time: 10.0037 s
+```
 
 ## YOLOv9-C FP16
 ## Batch Size 1

@@ -179,6 +179,8 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
 
 @try_export
 def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, labels, prefix=colorstr('ONNX END2END:')):
+    if not isinstance(model, DetectionModel) or isinstance(model, SegmentationModel):
+        raise RuntimeError("Model not supported. Only Detection Models can be exported with End2End functionality.")
     # YOLO ONNX export
     check_requirements('onnx')
     import onnx
@@ -652,11 +654,8 @@ def run(
     if onnx or xml:  # OpenVINO requires ONNX
         f[2], _ = export_onnx(model, im, file, opset, dynamic, simplify)
     if onnx_end2end:
-        if isinstance(model, DetectionModel):
-            labels = model.names
-            f[2], _ = export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, len(labels))
-        else:
-            raise RuntimeError("The model is not a DetectionModel.")
+        labels = model.names
+        f[2], _ = export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, len(labels))
     if xml:  # OpenVINO
         f[3], _ = export_openvino(file, metadata, half)
     if coreml:  # CoreML

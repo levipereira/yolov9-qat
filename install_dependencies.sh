@@ -64,7 +64,7 @@ if $defaults; then
                 pycocotools==2.0.7 \
                 pycuda==2024.1  || exit 1
     pip install onnx_graphsurgeon --extra-index-url https://pypi.ngc.nvidia.com  || exit 1
-    pip install --pre --upgrade tensorrt || exit 1
+    pip install --pre --upgrade tensorrt==10.0.0b6 || exit 1
     pip install pillow==9.5.0 --no-cache-dir --force-reinstall || exit 1
 fi
 

@@ -24,7 +24,6 @@ import models.quantize as quantize
 from utils.general import (LOGGER, check_dataset, check_requirements, check_img_size, colorstr, init_seeds,increment_path,file_size)
 from utils.torch_utils import (torch_distributed_zero_first)
 
-
 warnings.filterwarnings("ignore")
 
 FILE = Path(__file__).resolve()
@@ -182,7 +181,7 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     w.mkdir(parents=True, exist_ok=True)   # make dir
 
     is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
-    
+
     nc = int(data_dict['nc'])  # number of classes
     single_cls = False if nc > 1 else True
     names = data_dict['names']  # class names
@@ -225,7 +224,6 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         ignore_policy=f"model\.9999999999\.cv\d+\.\d+\.\d+(\.conv)?"   
     """ 
     ### End ####### 
-    
     
     quantize.replace_custom_module_forward(model)
     quantize.replace_to_quantization_module(model, ignore_policy="disabled")  ## disabled because was not implemented 
@@ -346,9 +344,8 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
     device  = torch.device(device)
     model   = load_model(weights, device)
 
-    if not isinstance(model, DetectionModel):
-        model_name=model.__class__.__name__
-        LOGGER.info(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
+    if not isinstance(model, DetectionModel) or isinstance(model, SegmentationModel):
+        LOGGER.info(f'{prefix} " Model not supported. Only Detection Models is supported.  ❌')
         exit(1)
 
     is_model_qat=False
