@@ -24,7 +24,6 @@ import models.quantize as quantize
 from utils.general import (LOGGER, check_dataset, check_requirements, check_img_size, colorstr, init_seeds,increment_path,file_size)
 from utils.torch_utils import (torch_distributed_zero_first)
 
-#Throughput: 841.335 qps
 warnings.filterwarnings("ignore")
 
 FILE = Path(__file__).resolve()
@@ -181,8 +180,8 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     w = save_dir / 'weights'  # weights dir
     w.mkdir(parents=True, exist_ok=True)   # make dir
 
-    #is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
-    is_coco=False
+    is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
+
     nc = int(data_dict['nc'])  # number of classes
     single_cls = False if nc > 1 else True
     names = data_dict['names']  # class names
