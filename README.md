@@ -115,11 +115,6 @@ For those who are not familiar with QAT, I highly recommend watching this video:
 | | 12 | -46.9% | +90.9% | +90.9% |
  
 
-**Changes are shown as percentages compared to FP16 for each batch size.**
-
-
-**Changes are shown as percentages compared to FP16 for each batch size.**
-
 ## QAT Training (Finetune)
 
 In this section, we'll outline the steps to perform Quantization-Aware Training (QAT) using fine-tuning. <br> **Please note that the supported quantization mode is fine-tuning only.** <br> The model should be trained using the original implementation train.py, and after training and reparameterization of the model, the user should proceed with quantization.
