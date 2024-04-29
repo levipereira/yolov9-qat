@@ -67,7 +67,7 @@ Currently, quantization is only available for object detection models. However, 
 |                      | -0.002 | -0.005 | +0.004 | -0.003 |
 
 
-## Latency/Throughput Report using only TensorRT
+## Latency/Throughput Report - TensorRT
 
 ![image](https://github.com/levipereira/yolov9-qat/assets/22964932/61a46206-9784-4c75-bcd4-6534eba51223)
 
