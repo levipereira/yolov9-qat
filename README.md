@@ -15,7 +15,7 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 For those who are not familiar with QAT, I highly recommend watching this video:<br> [Quantization explained with PyTorch - Post-Training Quantization, Quantization-Aware Training](https://www.youtube.com/watch?v=0VdNflU08yA)
 
 **Important**<br>
-Currently, quantization is only available for object detection models. However, since quantization has the greatest impact on the YOLOv9 model's backbone and the backbone remains unchanged, quantization is essentially ready for all models yolov9 types. <br> Quantization support for segmentation models has not yet been released, as it requires the development of evaluation and the validation of quantization of last layers of the model. <br>
+Currently, quantization is only available for object detection models. However, since quantization primarily affects the backbone of the YOLOv9 model and the backbone remains consistent across all YOLOv9 variants, quantization is effectively prepared for all YOLOv9-based models, regardless of whether they are used for detection or segmentation tasks. Quantization support for segmentation models has not yet been released, as it necessitates the development of evaluation criteria and the validation of quantization for the final layers of the model. <br>
 🌟 We still have plenty of nodes to improve Q/DQ, and we rely on the community's contribution to enhance this project, benefiting us all. Let's collaborate and make it even better! 🚀 
 
 ## Release Highlights
