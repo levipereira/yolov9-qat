@@ -36,7 +36,7 @@ from models.quantize import remove_redundant_qdq_model
 
 MACOS = platform.system() == 'Darwin'  # macOS environment
 
-
+ 
 
 def export_formats():
     # YOLO export formats
@@ -53,7 +53,8 @@ def export_formats():
         ['TensorFlow Lite', 'tflite', '.tflite', True, False],
         ['TensorFlow Edge TPU', 'edgetpu', '_edgetpu.tflite', False, False],
         ['TensorFlow.js', 'tfjs', '_web_model', False, False],
-        ['PaddlePaddle', 'paddle', '_paddle_model', True, True],]
+        ['PaddlePaddle', 'paddle', '_paddle_model', True, True],
+        ['ONNX TRT', 'onnx_trt', '_trt.onnx', True, True],]
     return pd.DataFrame(x, columns=['Format', 'Argument', 'Suffix', 'CPU', 'GPU'])
 
 
@@ -176,6 +177,143 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
     model_onnx = onnx.load(f)
     return f, model_onnx
     
+
+@try_export
+def export_onnx_trt(model, im, file, class_agnostic, topk_all, iou_thres, conf_thres, device, labels, mask_resolution, pooler_scale, sampling_ratio, prefix=colorstr('ONNX TRT:')):
+    is_det_model=True
+    if isinstance(model, SegmentationModel):
+        is_det_model=False
+
+    ## force SegmentationModel  
+    env_is_det_model = os.getenv("MODEL_DET")
+    if env_is_det_model == "0":
+        is_det_model = False
+    # YOLO ONNX export
+    check_requirements('onnx')
+
+    is_model_qat=False
+    for i in range(0, len(model.model)):
+        layer = model.model[i]
+        if quantize.have_quantizer(layer):
+            is_model_qat=True
+            break
+
+    import onnx
+    LOGGER.info(f'\n{prefix} starting export with onnx {onnx.__version__}...')
+    f = os.path.splitext(file)[0] + "-trt.onnx"
+    batch_size = 'batch'
+    d = {
+        'stride': int(max(model.stride)),
+        'names': model.names,
+        'model type' : 'Detection' if is_det_model else 'Segmentation',
+        'TRT Compatibility': '8.6 or above',
+        'TRT Plugins': 'YoloNMS' if is_det_model else 'YoloNMS, ROIAlign'
+        }
+
+    dynamic_axes = {'images': {0 : 'batch', 2: 'height', 3:'width'}, } # variable length axes
+
+    output_axes = {
+                    'num_dets': {0: 'batch'},
+                    'det_boxes': {0: 'batch'},
+                    'det_scores': {0: 'batch'},
+                    'det_classes': {0: 'batch'},
+                 }
+
+    if is_det_model:
+        output_axes['det_indices'] = {0: 'batch'}
+        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes', 'det_indices'] 
+        shapes = [ batch_size, 1,  
+                batch_size,  topk_all, 4,
+                batch_size,  topk_all,  
+                batch_size,  topk_all, 
+                batch_size,  topk_all]
+        
+    else:
+        output_axes['det_masks'] = {0: 'batch'}
+        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes', 'det_masks'] 
+        shapes = [ batch_size, 1,  
+                batch_size,  topk_all, 4,
+                batch_size,  topk_all,  
+                batch_size,  topk_all, 
+                batch_size,  topk_all, mask_resolution * mask_resolution]
+
+    dynamic_axes.update(output_axes)
+    
+    model = End2End_TRT(model, class_agnostic, topk_all, iou_thres, conf_thres, mask_resolution, pooler_scale, sampling_ratio, None ,device, labels, is_det_model )
+
+    if is_model_qat:
+        warnings.filterwarnings("ignore")
+        LOGGER.info(f'{prefix} Model QAT Detected ...')
+        quant_nn.TensorQuantizer.use_fb_fake_quant = True
+        model.eval()
+        quantize.initialize()
+        quantize.replace_custom_module_forward(model)
+        
+        with torch.no_grad():
+            torch.onnx.export(model, 
+                            im, 
+                            f, 
+                            verbose=False, 
+                            export_params=True,       # store the trained parameter weights inside the model file
+                            opset_version=14, 
+                            do_constant_folding=True, # whether to execute constant folding for optimization
+                            input_names=['images'],
+                            output_names=output_names,
+                            dynamic_axes=dynamic_axes)
+        quant_nn.TensorQuantizer.use_fb_fake_quant = False
+
+    else:    
+        torch.onnx.export(model, 
+                            im, 
+                            f, 
+                            verbose=False, 
+                            export_params=True,       # store the trained parameter weights inside the model file
+                            opset_version=14, 
+                            do_constant_folding=True, # whether to execute constant folding for optimization
+                            input_names=['images'],
+                            output_names=output_names,
+                            dynamic_axes=dynamic_axes)
+
+    # Checks
+    model_onnx = onnx.load(f)  # load onnx model
+    onnx.checker.check_model(model_onnx)  # check onnx model
+
+    for k, v in d.items():
+        meta = model_onnx.metadata_props.add()
+        meta.key, meta.value = k, str(v)
+        
+
+    for i in model_onnx.graph.output:
+        for j in i.type.tensor_type.shape.dim:
+            j.dim_param = str(shapes.pop(0))
+
+    check_requirements('onnxsim')
+    try:
+        import onnxsim
+        LOGGER.info(f'\n{prefix} Starting to simplify ONNX...')
+        model_onnx, check = onnxsim.simplify(model_onnx)
+        assert check, 'assert check failed'
+    except Exception as e:
+        LOGGER.info(f'\n{prefix} Simplifier failure: {e}')
+
+    onnx.save(model_onnx,f)
+
+    check_requirements('onnx_graphsurgeon')
+    if is_model_qat:
+        LOGGER.info(f'{prefix} Removing redundant Q/DQ layer with onnx_graphsurgeon {gs.__version__}...')
+        remove_redundant_qdq_model(model_onnx, f) 
+    
+    LOGGER.info(f'\n{prefix} Starting to cleanup ONNX using onnx_graphsurgeon...')
+    try:
+        import onnx_graphsurgeon as gs
+
+        graph = gs.import_onnx(model_onnx)
+        graph = graph.cleanup().toposort()
+        model_onnx = gs.export_onnx(graph)
+    except Exception as e:
+        LOGGER.info(f'\n{prefix} Cleanup failure: {e}')
+
+    return f, model_onnx
 
 @try_export
 def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, labels, prefix=colorstr('ONNX END2END:')):
@@ -602,6 +740,9 @@ def run(
         topk_all=100,  # TF.js NMS: topk for all classes to keep
         iou_thres=0.45,  # TF.js NMS: IoU threshold
         conf_thres=0.25,  # TF.js NMS: confidence threshold
+        mask_resolution=56,
+        pooler_scale=0.25,
+        sampling_ratio=0,
 ):
     t = time.time()
     include = [x.lower() for x in include]  # to lowercase
@@ -655,15 +796,15 @@ def run(
         f[2], _ = export_onnx(model, im, file, opset, dynamic, simplify)
     if onnx_end2end:
         labels = model.names
-        f[2], _ = export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, len(labels))
+        f[3], _ = export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, len(labels))
     if xml:  # OpenVINO
-        f[3], _ = export_openvino(file, metadata, half)
+        f[4], _ = export_openvino(file, metadata, half)
     if coreml:  # CoreML
-        f[4], _ = export_coreml(model, im, file, int8, half)
+        f[5], _ = export_coreml(model, im, file, int8, half)
     if any((saved_model, pb, tflite, edgetpu, tfjs)):  # TensorFlow formats
         assert not tflite or not tfjs, 'TFLite and TF.js models must be exported separately, please pass only one type.'
         assert not isinstance(model, ClassificationModel), 'ClassificationModel export to TF formats not yet supported.'
-        f[5], s_model = export_saved_model(model.cpu(),
+        f[6], s_model = export_saved_model(model.cpu(),
                                            im,
                                            file,
                                            dynamic,
@@ -675,16 +816,20 @@ def run(
                                            conf_thres=conf_thres,
                                            keras=keras)
         if pb or tfjs:  # pb prerequisite to tfjs
-            f[6], _ = export_pb(s_model, file)
+            f[7], _ = export_pb(s_model, file)
         if tflite or edgetpu:
-            f[7], _ = export_tflite(s_model, im, file, int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms)
+            f[8], _ = export_tflite(s_model, im, file, int8 or edgetpu, data=data, nms=nms, agnostic_nms=agnostic_nms)
             if edgetpu:
-                f[8], _ = export_edgetpu(file)
+                f[9], _ = export_edgetpu(file)
             add_tflite_metadata(f[8] or f[7], metadata, num_outputs=len(s_model.outputs))
         if tfjs:
-            f[9], _ = export_tfjs(file)
+            f[10], _ = export_tfjs(file)
     if paddle:  # PaddlePaddle
-        f[10], _ = export_paddle(model, im, file, metadata)
+        f[11], _ = export_paddle(model, im, file, metadata)
+    if onnx_trt:
+        labels = model.names
+        f[12], _ = export_onnx_trt(model, im, file, class_agnostic, topk_all, iou_thres, conf_thres, device, len(labels), mask_resolution, pooler_scale, sampling_ratio )
+    # Finish
 
     # Finish
     f = [str(x) for x in f if x]  # filter out '' and None
@@ -731,14 +876,17 @@ def parse_opt():
     parser.add_argument('--topk-all', type=int, default=100, help='ONNX END2END/TF.js NMS: topk for all classes to keep')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='ONNX END2END/TF.js NMS: IoU threshold')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='ONNX END2END/TF.js NMS: confidence threshold')
+    parser.add_argument('--mask-resolution', type=int, default=160, help='Mask pooled output.')
+    parser.add_argument('--pooler-scale', type=float, default=0.25, help='Multiplicative factor used to translate the ROI coordinates. ')
+    parser.add_argument('--sampling-ratio', type=int, default=0, help='Number of sampling points in the interpolation. Allowed values are non-negative integers.')
     parser.add_argument(
         '--include',
         nargs='+',
-        default=['torchscript'],
-        help='torchscript, onnx, onnx_end2end, openvino, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle')
+        default=['onnx_trt'],
+        help='torchscript, onnx, onnx_end2end, onnx_trt, openvino, engine, coreml, saved_model, pb, tflite, edgetpu, tfjs, paddle')
     opt = parser.parse_args()
 
-    if 'onnx_end2end' in opt.include:  
+    if 'onnx_end2end' in opt.include or 'onnx_trt' in opt.include:  
         opt.simplify = True
         opt.dynamic = True
         opt.inplace = True
