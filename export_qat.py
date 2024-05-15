@@ -27,6 +27,7 @@ if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 from models.experimental import attempt_load, End2End
+from models.experimental_trt import End2End_TRT
 from models.yolo import ClassificationModel, Detect, DDetect, DualDetect, DualDDetect, DetectionModel, SegmentationModel
 from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, Profile, check_dataset, check_img_size, check_requirements, check_version,
@@ -36,7 +37,8 @@ from models.quantize import remove_redundant_qdq_model
 
 MACOS = platform.system() == 'Darwin'  # macOS environment
 
- 
+warnings.filterwarnings("ignore", category=TracerWarning)
+warnings.filterwarnings("ignore", category=FutureWarning )
 
 def export_formats():
     # YOLO export formats
