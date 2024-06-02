@@ -43,13 +43,13 @@ if $defaults; then
 
 
     # upgrade TensorRT from 8.5.3 cuda 11.8 to 10.0 Cuda 11.2
-    wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.0.0/local_repo/nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4_1.0-1_amd64.deb || exit 1
-    dpkg -i nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4_1.0-1_amd64.deb || exit 1
-    cp /var/nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4/nv-tensorrt-local-FBD8E82C-keyring.gpg /usr/share/keyrings/ || exit 1
+    wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.0.1/local_repo/nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4_1.0-1_amd64.deb || exit 1
+    dpkg -i nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4_1.0-1_amd64.deb || exit 1
+    cp /var/nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4/nv-tensorrt-local-4BE0C9B6-keyring.gpg /usr/share/keyrings/ || exit 1
     apt-get update || exit 1
     apt-get install -y tensorrt onnx-graphsurgeon || exit 1
     apt-get purge "nv-tensorrt-local-repo*" -y || exit 1
-    rm -f nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4_1.0-1_amd64.deb
+    rm -f nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4_1.0-1_amd64.deb
     # Upgrade pip
     pip install --upgrade pip || exit 1
 
@@ -64,7 +64,7 @@ if $defaults; then
                 pycocotools==2.0.7 \
                 pycuda==2024.1  || exit 1
     pip install onnx_graphsurgeon --extra-index-url https://pypi.ngc.nvidia.com  || exit 1
-    pip install --pre --upgrade tensorrt==10.0.0b6 || exit 1
+    pip install --upgrade tensorrt==10.0.1 || exit 1
     pip install pillow==9.5.0 --no-cache-dir --force-reinstall || exit 1
 fi
 
@@ -84,7 +84,7 @@ if $trex; then
         cd /opt/nvidia_trex/ || exit 1
         git clone https://github.com/NVIDIA/TensorRT.git || exit 1
         cd TensorRT || exit 1
-        git checkout release/9.3 || exit 1
+        git checkout release/10.0 || exit 1
         cd tools/experimental/trt-engine-explorer || exit 1
         source /opt/nvidia_trex/env_trex/bin/activate || exit 1
         pip install -e . || exit 1
