@@ -45,7 +45,7 @@ if $defaults; then
     # upgrade TensorRT from 8.5.3 cuda 11.8 to 10.0 Cuda 11.2
     wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.0.1/local_repo/nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4_1.0-1_amd64.deb || exit 1
     dpkg -i nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4_1.0-1_amd64.deb || exit 1
-    cp /var/nv-tensorrt-local-repo-ubuntu2004-10.0.0-cuda-12.4/nv-tensorrt-local-4BE0C9B6-keyring.gpg /usr/share/keyrings/ || exit 1
+    cp /var/nv-tensorrt-local-repo-ubuntu2004-10.0.1-cuda-12.4/nv-tensorrt-local-4BE0C9B6-keyring.gpg /usr/share/keyrings/ || exit 1
     apt-get update || exit 1
     apt-get install -y tensorrt onnx-graphsurgeon || exit 1
     apt-get purge "nv-tensorrt-local-repo*" -y || exit 1
