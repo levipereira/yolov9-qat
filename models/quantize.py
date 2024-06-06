@@ -449,8 +449,8 @@ def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
     
     with torch.no_grad():
         collect_stats(model, dataloader, device, num_batch=num_batch)
-        #compute_amax(model, method="percentile", percentile=99.99, strict=True) # strict=False avoid Exception when some quantizer are never used
-        compute_amax(model, method="mse") 
+        #compute_amax(model, method="percentile", percentile=99.999, strict=True) # strict=False avoid Exception when some quantizer are never used
+        compute_amax(model, method="mse", strict=False) 
    
 
 
@@ -474,8 +474,8 @@ def finetune(
     if lrschedule is None:
         lrschedule = {
             0: 1e-6,
-            6: 1e-5,
-            7: 1e-6
+            4: 1e-5,
+            5: 1e-6
         }
 
 

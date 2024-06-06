@@ -7,7 +7,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 import warnings
-
+import re
 # PyTorch
 import torch
 import torch.nn as nn
@@ -105,7 +105,7 @@ def create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride, keep
         imgsz=imgsz, 
         batch_size=batch_size, 
         single_cls=single_cls,
-        augment=False, hyp=None, rect=True, cache=False,stride=stride,pad=0.5, image_weights=False)[0]
+        augment=False, hyp=None, rect=True, cache=True,stride=stride,pad=0.5, image_weights=False)[0]
 
     def subclass_len(self):
         if keep_images is not None:
@@ -166,10 +166,10 @@ def export_onnx(model, file, im, opset=12, dynamic=False, prefix=colorstr('QAT O
             m.export = False
     
 
-def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, prefix=colorstr('QAT:')):
+def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, sensitive_layer, prefix=colorstr('QAT:')):
     
     if not Path(weights).exists():
-        LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
+        LOGGER.error(f'{prefix} Weight file not found "{weights}"  ❌')
         exit(1)
         
     quantize.initialize()
@@ -181,6 +181,7 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     w.mkdir(parents=True, exist_ok=True)   # make dir
 
     is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
+    is_coco= False
 
     nc = int(data_dict['nc'])  # number of classes
     single_cls = False if nc > 1 else True
@@ -188,6 +189,7 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, data_dict)  # check
     train_path = data_dict['train']
     test_path = data_dict['val']
+    sensitive_layer_enabled=False
 
     result_eval_origin=None
     result_eval_ptq=None
@@ -198,9 +200,18 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
 
     if not isinstance(model, DetectionModel):
         model_name=model.__class__.__name__
-        LOGGER.info(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
+        LOGGER.error(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
         exit(1)
 
+    total_layers=len(model.model)-1
+    if sensitive_layer == -1:
+        sensitive_layer_enabled = False
+    elif 0 <= sensitive_layer <= total_layers:
+        sensitive_layer_enabled = True
+    else:
+        LOGGER.error(f'{prefix} Detected {total_layers} layers and was configured --sensitive-layer {sensitive_layer} ❌')
+        exit(1)
+        
     stride = max(int(model.stride.max()), 32)  # grid size (max stride)
     imgsz = check_img_size(imgsz, s=stride)  # check image size
 
@@ -216,13 +227,13 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     
     ### This rule is disabled - This allow user disable qat per Layers ###
     # This rule has been disabled, but it remains in the code to maintain compatibility or future implementation.
-    """
-    ignore_layer=-1
-    if ignore_layer > -1:
-        ignore_policy=f"model\.{ignore_layer}\.cv\d+\.\d+\.\d+(\.conv)?"
-    else:
-        ignore_policy=f"model\.9999999999\.cv\d+\.\d+\.\d+(\.conv)?"   
-    """ 
+    
+    # ignore_layer=-1
+    # if ignore_layer > -1:
+    #     ignore_policy=f"model\.{ignore_layer}\.cv\d+\.\d+\.\d+(\.conv)?"
+    # else:
+    #     ignore_policy=f"model\.9999999999\.cv\d+\.\d+\.\d+(\.conv)?"   
+     
     ### End ####### 
     
     quantize.replace_custom_module_forward(model)
@@ -245,6 +256,9 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     if no_eval_ptq:
         
         LOGGER.info(f'\n{prefix} Evaluating PTQ...')
+        if sensitive_layer_enabled:
+            LOGGER.info(f'\n{prefix} QAT disabled on Layer model.{sensitive_layer}')
+            quantize.disable_quantization(model.model[sensitive_layer]).apply()
         model_eval = deepcopy(model).eval()  
         
         result_eval_ptq = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
@@ -261,6 +275,9 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         nonlocal best_map , result_eval_qat_best
 
         epoch +=1
+        if sensitive_layer_enabled:
+            LOGGER.info(f'\n{prefix} Epoch-{epoch},  QAT disabled on Layer model.{sensitive_layer}')
+            quantize.disable_quantization(model.model[sensitive_layer]).apply()
         model_eval = deepcopy(model).eval()  
         with torch.no_grad():  
             eval_result = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
@@ -319,12 +336,81 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         model, train_dataloader, per_epoch, early_exit_batchs_per_epoch=iters, 
         preprocess=preprocess, supervision_policy=supervision_policy())
 
+
+
+def run_dequantize(weights, data, imgsz, batch_size, hyp, device, sensitive_layer, prefix=colorstr('Dequantize:')):
+    
+    if not Path(weights).exists():
+        LOGGER.error(f'{prefix} Weight file not found "{weights}"  ❌')
+        exit(1)
+    
+        
+    quantize.initialize()
+    
+    with torch_distributed_zero_first(LOCAL_RANK):
+        data_dict = check_dataset(data)
+
+    is_coco = isinstance(data_dict.get('val'), str) and data_dict['val'].endswith(f'val2017.txt')  # COCO dataset
+    is_coco= False
+
+    nc = int(data_dict['nc'])  # number of classes
+    single_cls = False if nc > 1 else True
+    names = data_dict['names']  # class names
+    assert len(names) == nc, '%g names found for nc=%g dataset in %s' % (len(names), nc, data_dict)  # check
+    train_path = data_dict['train']
+    test_path = data_dict['val']
+    sensitive_layer_enabled=False
+
+    device  = torch.device(device)
+    model   = load_model(weights, device)
+
+    pattern = r'qat_(best_|ep_\d+_ap_\d+\.\d+_)'
+
+    if not isinstance(model, DetectionModel):
+        model_name=model.__class__.__name__
+        LOGGER.error(f'{prefix} {model_name} model is not supported. Only DetectionModel is supported.  ❌')
+        exit(1)
+
+    total_layers=len(model.model)-1
+    if sensitive_layer < 0 or sensitive_layer > total_layers :
+        LOGGER.error(f'{prefix} Detected {total_layers} layers and was configured --sensitive-layer {sensitive_layer} ❌')
+        exit(1)
+        
+        
+    stride = max(int(model.stride.max()), 32)  # grid size (max stride)
+    imgsz = check_img_size(imgsz, s=stride)  # check image size
+
+    # conf onnx export
+    exp_imgsz=[imgsz,imgsz]
+    gs = int(max(model.stride))  # grid size (max stride)
+    exp_imgsz = [check_img_size(x, gs) for x in exp_imgsz]  # verify img_size are gs-multiples
+    im = torch.zeros(batch_size, 3, *exp_imgsz).to(device)  # image size(1,3,320,192) BCHW iDetection
+
+
+    train_dataloader = create_train_dataloader(train_path, imgsz, batch_size, single_cls, stride, hyp)
+    val_dataloader   = create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride)
+    
+    LOGGER.info(f'\n{prefix}  QAT disabled on Layer model.{sensitive_layer}')
+    quantize.disable_quantization(model.model[sensitive_layer]).apply()
+    model_eval = deepcopy(model).eval() 
+    save_dir = Path(os.path.dirname(weights))
+    with torch.no_grad():  
+        eval_result = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
+        eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+    de_w = (f'dequantize-layer-{sensitive_layer}-ap-{eval_map}-') 
+    dequantize_weights = re.sub(pattern, de_w, weights)
+    torch.save({"model": model_eval},f'{dequantize_weights}')
+    LOGGER.info(f'\n{prefix} Dequantized weights saved as {dequantize_weights} ({file_size(dequantize_weights):.1f} MB)')
+    eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+    LOGGER.info(f'\n{prefix} Eval - Dequantize | AP: {eval_map}  | AP50: {eval_map50} | Precision: {eval_mp} | Recall: {eval_mr}\n')
+
+
 def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_dir, num_image, prefix=colorstr('QAT ANALYSIS:')):
 
     if not Path(weights).exists():
         LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
         exit(1)
-        
+    quantize.initialize()
     save_dir = Path(save_dir)
     # Create the directory if it doesn't exist
     save_dir.mkdir(parents=True, exist_ok=opt.exist_ok)
@@ -352,7 +438,7 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
     for i in range(0, len(model.model)):
         layer = model.model[i]
         if quantize.have_quantizer(layer):
-            is_model_qat=True
+            is_model_qat=False
             break
 
     if is_model_qat:
@@ -370,10 +456,12 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
 
     train_dataloader = create_train_dataloader(train_path, imgsz, batch_size, single_cls, stride, hyp)
     val_dataloader   = create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride)
-    quantize.initialize()
     quantize.replace_custom_module_forward(model)
     quantize.replace_to_quantization_module(model, ignore_policy="disabled")  ## disabled because was not implemented 
+    quantize.apply_custom_rules_to_quantizer(model, lambda model, file: export_onnx(model, file, im))
     quantize.calibrate_model(model, train_dataloader, device)
+    
+
 
     report_file=os.path.join(save_dir , "summary-sensitive-analysis.json")
     report = ReportTool(report_file)
@@ -404,7 +492,7 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
     
     report = sorted(report.data, key=lambda x:x[0], reverse=True)
     print("Sensitive summary:")
-    for n, (ap, name) in enumerate(report[:10]):
+    for n, (ap, name) in enumerate(report[:22]):
         print(f"Top{n}: Using fp16 {name}, ap = {ap:.5f}")
 
 
@@ -483,6 +571,7 @@ if __name__ == "__main__":
     qat.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     qat.add_argument("--iters", type=int, default=200, help="iters per epoch")
     qat.add_argument('--seed', type=int, default=57, help='Global training seed')
+    qat.add_argument('--sensitive-layer', type=int, default=-1, help='Layer number to disable Quantization, Default=-1 (all layers will be quantized)')
     qat.add_argument("--supervision-stride", type=int, default=1, help="supervision stride")
     qat.add_argument("--no-eval-origin", action="store_false", help="Disable eval for origin model")
     qat.add_argument("--no-eval-ptq", action="store_false", help="Disable eval for ptq model")
@@ -499,6 +588,15 @@ if __name__ == "__main__":
     sensitive.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     sensitive.add_argument("--num-image", type=int, default=None, help="number of image to evaluate")
 
+    dequantize = subps.add_parser("dequantize", help="Dequantize Sensitive Layer after training")
+    dequantize.add_argument('--weights', type=str, default=ROOT / 'runs/models_original/yolov9-c.pt', help='Weights path (.pt)')
+    dequantize.add_argument("--device", type=str, default="cuda:0", help="device")
+    dequantize.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
+    dequantize.add_argument('--batch-size', type=int, default=10, help='total batch size')
+    dequantize.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
+    dequantize.add_argument('--hyp', type=str, default='data/hyps/hyp.scratch-high.yaml', help='hyperparameters path') 
+    dequantize.add_argument('--sensitive-layer', type=int,  required=True, help='Layer number to disable Quantization')
+    
     testcmd = subps.add_parser("eval", help="Do evaluate")
     testcmd.add_argument('--weights', type=str, default=ROOT / 'runs/models_original/yolov9-c.pt', help='Weights path (.pt)')
     testcmd.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')
@@ -521,7 +619,7 @@ if __name__ == "__main__":
             opt.weights, opt.data, opt.imgsz, opt.batch_size, 
             opt.hyp, opt.device, Path(opt.save_dir), 
              opt.supervision_stride, opt.iters,
-            opt.no_eval_origin, opt.no_eval_ptq
+            opt.no_eval_origin, opt.no_eval_ptq, opt.sensitive_layer
         )
 
     elif opt.cmd == "sensitive":
@@ -531,6 +629,12 @@ if __name__ == "__main__":
                                opt.imgsz, opt.batch_size, opt.hyp, 
                                opt.save_dir, opt.num_image 
                                )
+
+    elif opt.cmd == "dequantize":
+        print(opt)
+        run_dequantize(opt.weights, opt.data, opt.imgsz, opt.batch_size,   
+                        opt.hyp, opt.device, opt.sensitive_layer )
+
     elif opt.cmd == "eval":
         opt.save_dir = str(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))
         print(opt)
