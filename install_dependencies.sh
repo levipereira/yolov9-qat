@@ -84,7 +84,7 @@ if $trex; then
         cd /opt/nvidia_trex/ || exit 1
         git clone https://github.com/NVIDIA/TensorRT.git || exit 1
         cd TensorRT || exit 1
-        git checkout release/10.0 || exit 1
+        git checkout release/9.3 || exit 1
         cd tools/experimental/trt-engine-explorer || exit 1
         source /opt/nvidia_trex/env_trex/bin/activate || exit 1
         pip install -e . || exit 1
