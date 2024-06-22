@@ -74,6 +74,18 @@ class QuantADownAvgChunk(torch.nn.Module):
         x = self._chunk_quantizer(x)
         return x.chunk(2, 1)
 
+class QuantAConvAvgChunk(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._chunk_quantizer = quant_nn.TensorQuantizer(QuantDescriptor(num_bits=8, calib_method="histogram"))
+        self._chunk_quantizer._calibrator._torch_hist = True
+        self.avg_pool2d = torch.nn.AvgPool2d(2, 1, 0, False, True)
+
+    def forward(self, x):
+        x = self.avg_pool2d(x)
+        x = self._chunk_quantizer(x)
+        return x
+    
 class QuantRepNCSPELAN4Chunk(torch.nn.Module):
     def __init__(self, c):
         super().__init__()
@@ -340,7 +352,12 @@ def adown_quant_forward(self, x):
         x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
         x2 = self.cv2(x2)
         return torch.cat((x1, x2), 1)
-   
+
+def aconv_quant_forward(self, x):
+    if hasattr(self, "aconvchunkop"):
+        x = self.aconvchunkop(x)
+        return self.cv1(x)
+      
 def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Callable):
     export_onnx(model,  "quantization-custom-rules-temp.onnx")
     pairs = find_quantizer_pairs("quantization-custom-rules-temp.onnx")
@@ -369,7 +386,9 @@ def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Calla
 
         if module.__class__.__name__ == 'ADown':
             module.cv1.conv._input_quantizer = module.adownchunkop._chunk_quantizer
-
+        if module.__class__.__name__ == 'AConv':
+            module.cv1.conv._input_quantizer = module.aconvchunkop._chunk_quantizer
+            
 def replace_custom_module_forward(model):
     for name, module  in model.named_modules():
         # if module.__class__.__name__ == "RepNCSPELAN4":
@@ -383,6 +402,12 @@ def replace_custom_module_forward(model):
                 print(f"Add ADownQuantChunk to {name}")
                 module.adownchunkop = QuantADownAvgChunk()
             module.__class__.forward = adown_quant_forward
+
+        if module.__class__.__name__ == "AConv":
+            if not hasattr(module, "aconvchunkop"):
+                print(f"Add AConvQuantChunk to {name}")
+                module.aconvchunkop = QuantAConvAvgChunk()
+            module.__class__.forward = aconv_quant_forward
 
         if module.__class__.__name__ == "RepNBottleneck":
             if module.add:
