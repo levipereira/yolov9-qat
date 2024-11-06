@@ -1,4 +1,4 @@
-# YOLOv9 QAT for TensorRT
+# YOLOv9 QAT for TensorRT  Detection / Segmentation 
 
 This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.<br>
@@ -15,7 +15,8 @@ We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/
 For those who are not familiar with QAT, I highly recommend watching this video:<br> [Quantization explained with PyTorch - Post-Training Quantization, Quantization-Aware Training](https://www.youtube.com/watch?v=0VdNflU08yA)
 
 **Important**<br>
-Currently, quantization is only available for object detection models. However, since quantization primarily affects the backbone of the YOLOv9 model and the backbone remains consistent across all YOLOv9 variants, quantization is effectively prepared for all YOLOv9-based models, regardless of whether they are used for detection or segmentation tasks. Quantization support for segmentation models has not yet been released, as it necessitates the development of evaluation criteria and the validation of quantization for the final layers of the model. <br>
+Evaluation of the segmentation model using TensorRT is currently under development. Once I have more available time, I will complete and release this work.
+
 🌟 We still have plenty of nodes to improve Q/DQ, and we rely on the community's contribution to enhance this project, benefiting us all. Let's collaborate and make it even better! 🚀 
 
 ## Release Highlights
@@ -35,6 +36,7 @@ Currently, quantization is only available for object detection models. However, 
 
 ### Evaluation Results
 
+## Detection
 #### Activation SiLU
 
 | Eval Model | AP     | AP50   | Precision | Recall |
@@ -65,6 +67,14 @@ Currently, quantization is only available for object detection models. However, 
 |----------------------|------|------|-----------|--------|
 | **INT8 (TensorRT)** vs **Origin (Pytorch)** |       |      |          |        |
 |                      | -0.002 | -0.005 | +0.004 | -0.003 |
+
+## Segmentation
+| Model  | Box |  |  |  | Mask |  |  |  |
+|--------|-----|--|--|--|------|--|--|--|
+|        | P | R | mAP50 | mAP50-95 | P | R | mAP50 | mAP50-95 |
+| Origin | 0.729 | 0.632 | 0.691 | 0.521 | 0.717 | 0.611 | 0.657 | 0.423 |
+| PTQ    | 0.729 | 0.626 | 0.688 | 0.520 | 0.717 | 0.604 | 0.654 | 0.421 |
+| QAT    | 0.725 | 0.631 | 0.689 | 0.521 | 0.714 | 0.609 | 0.655 | 0.421 |
 
 
 ## Latency/Throughput Report - TensorRT
@@ -530,3 +540,35 @@ D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%)
 Total Host Walltime: 10.0286 s
 Total GPU Compute Time: 10.0269 s
 ```
+
+
+# Segmentation 
+
+## FP16
+### Batch Size 8
+
+```bash
+ === Performance summary ===
+ Throughput: 124.055 qps
+ Latency: min = 8.00354 ms, max = 8.18585 ms, mean = 8.05924 ms, median = 8.05072 ms, percentile(90%) = 8.11499 ms, percentile(95%) = 8.1438 ms, percentile(99%) = 8.17456 ms
+ Enqueue Time: min = 0.00219727 ms, max = 0.0200653 ms, mean = 0.00271174 ms, median = 0.00256348 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00317383 ms, percentile(99%) = 0.00466919 ms
+ H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ GPU Compute Time: min = 8.00354 ms, max = 8.18585 ms, mean = 8.05924 ms, median = 8.05072 ms, percentile(90%) = 8.11499 ms, percentile(95%) = 8.1438 ms, percentile(99%) = 8.17456 ms
+ D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ Total Host Walltime: 3.01478 s
+ Total GPU Compute Time: 3.01415 s
+ ```
+
+ ## INT8 / FP16 
+ ### Batch Size 8 
+ ```bash
+  === Performance summary ===
+ Throughput: 223.63 qps
+ Latency: min = 4.45544 ms, max = 4.71553 ms, mean = 4.47007 ms, median = 4.46777 ms, percentile(90%) = 4.47284 ms, percentile(95%) = 4.47388 ms, percentile(99%) = 4.47693 ms
+ Enqueue Time: min = 0.00219727 ms, max = 0.00854492 ms, mean = 0.00258152 ms, median = 0.00244141 ms, percentile(90%) = 0.00292969 ms, percentile(95%) = 0.00305176 ms, percentile(99%) = 0.00439453 ms
+ H2D Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ GPU Compute Time: min = 4.45544 ms, max = 4.71553 ms, mean = 4.47007 ms, median = 4.46777 ms, percentile(90%) = 4.47284 ms, percentile(95%) = 4.47388 ms, percentile(99%) = 4.47693 ms
+ D2H Latency: min = 0 ms, max = 0 ms, mean = 0 ms, median = 0 ms, percentile(90%) = 0 ms, percentile(95%) = 0 ms, percentile(99%) = 0 ms
+ Total Host Walltime: 3.00944 s
+ Total GPU Compute Time: 3.00836 s
+ ```

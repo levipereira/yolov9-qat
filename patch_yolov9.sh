@@ -31,4 +31,7 @@ cp scripts/generate_trt_engine.sh "$yolov9_dir/scripts/generate_trt_engine.sh" &
 cp scripts/val_trt.sh "$yolov9_dir/scripts/val_trt.sh" && echo "val_trt.sh patched successfully."
 cp draw-engine.py "$yolov9_dir/draw-engine.py" && echo "draw-engine.py patched successfully."
 
+cp models/experimental_trt.py "$yolov9_dir/models/experimental_trt.py" && echo "experimental_trt.py patched successfully."
+cp segment/qat_seg.py "$yolov9_dir/segment/qat_seg.py" && echo "qat_seg.py patched successfully."
+
 echo "Patch applied successfully to YOLOv9 directory: $yolov9_dir"

@@ -26,7 +26,8 @@ if str(ROOT) not in sys.path:
 if platform.system() != 'Windows':
     ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from models.experimental import attempt_load, End2End
+from models.experimental_trt import End2End_TRT
+from models.experimental import attempt_load 
 from models.yolo import ClassificationModel, Detect, DDetect, DualDetect, DualDDetect, DetectionModel, SegmentationModel
 from utils.dataloaders import LoadImages
 from utils.general import (LOGGER, Profile, check_dataset, check_img_size, check_requirements, check_version,
@@ -175,12 +176,22 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
     remove_redundant_qdq_model(model_onnx, f) 
     model_onnx = onnx.load(f)
     return f, model_onnx
-    
+
+
 
 @try_export
-def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, labels, prefix=colorstr('ONNX END2END:')):
-    if not isinstance(model, DetectionModel) or isinstance(model, SegmentationModel):
+def export_onnx_end2end(model, im, file, class_agnostic, simplify, topk_all, iou_thres, conf_thres, device, labels, mask_resolution, pooler_scale, sampling_ratio, prefix=colorstr('ONNX END2END:')):
+    if not isinstance(model, DetectionModel) or not isinstance(model, SegmentationModel):
         raise RuntimeError("Model not supported. Only Detection Models can be exported with End2End functionality.")
+
+    is_det_model=True
+    if isinstance(model, SegmentationModel):
+        is_det_model=False
+
+    env_is_det_model = os.getenv("MODEL_DET")
+    if env_is_det_model == "0":
+        is_det_model = False
+
     # YOLO ONNX export
     check_requirements('onnx')
     import onnx
@@ -195,6 +206,14 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
     LOGGER.info(f'\n{prefix} starting export with onnx {onnx.__version__}...')
     f = os.path.splitext(file)[0] + "-end2end.onnx"
     batch_size = 'batch'
+    d = {
+        'stride': int(max(model.stride)),
+        'names': model.names,
+        'model type' : 'Detection' if is_det_model else 'Segmentation',
+        'TRT Compatibility': '8.6 or above' if class_agnostic else '8.5 or above', 
+        'TRT Plugins': 'EfficientNMS_TRT' if is_det_model else 'EfficientNMSX_TRT, ROIAlign'
+        }
+    
 
     dynamic_axes = {'images': {0 : 'batch', 2: 'height', 3:'width'}, } # variable length axes
 
@@ -204,22 +223,32 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
                     'det_scores': {0: 'batch'},
                     'det_classes': {0: 'batch'},
                 }
+    if is_det_model:
+        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes'] 
+        shapes = [ batch_size, 1,  
+                batch_size,  topk_all, 4,
+                batch_size,  topk_all,  
+                batch_size,  topk_all]
+        
+    else:
+        output_axes['det_masks'] = {0: 'batch'}
+        output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes', 'det_masks'] 
+        shapes = [ batch_size, 1,  
+                batch_size,  topk_all, 4,
+                batch_size,  topk_all,  
+                batch_size,  topk_all, 
+                batch_size,  topk_all, mask_resolution * mask_resolution]
+
     dynamic_axes.update(output_axes)
-    model = End2End(model, topk_all, iou_thres, conf_thres, None ,device, labels)
+    model = End2End_TRT(model, class_agnostic, topk_all, iou_thres, conf_thres, mask_resolution, pooler_scale, sampling_ratio, None ,device, labels, is_det_model )
 
-    output_names = ['num_dets', 'det_boxes', 'det_scores', 'det_classes']
-    shapes = [ batch_size, 1,  batch_size,  topk_all, 4,
-               batch_size,  topk_all,  batch_size,  topk_all]
-    
-
-    
+   
     if is_model_qat:
         warnings.filterwarnings("ignore")
         LOGGER.info(f'{prefix} Model QAT Detected ...')
         quant_nn.TensorQuantizer.use_fb_fake_quant = True
         model.eval()
         quantize.initialize()
-        quantize.replace_custom_module_forward(model)
         
         with torch.no_grad():
             torch.onnx.export(model, 
@@ -227,7 +256,7 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
                             f, 
                             verbose=False, 
                             export_params=True,       # store the trained parameter weights inside the model file
-                            opset_version=13, 
+                            opset_version=16, 
                             do_constant_folding=True, # whether to execute constant folding for optimization
                             input_names=['images'],
                             output_names=output_names,
@@ -239,7 +268,7 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
                     f, 
                     verbose=False, 
                     export_params=True,       # store the trained parameter weights inside the model file
-                    opset_version=12, 
+                    opset_version=16, 
                     do_constant_folding=True, # whether to execute constant folding for optimization
                     input_names=['images'],
                     output_names=output_names,
@@ -248,6 +277,10 @@ def export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thr
     # Checks
     model_onnx = onnx.load(f)  # load onnx model
     onnx.checker.check_model(model_onnx)  # check onnx model
+    for k, v in d.items():
+        meta = model_onnx.metadata_props.add()
+        meta.key, meta.value = k, str(v)
+
     for i in model_onnx.graph.output:
         for j in i.type.tensor_type.shape.dim:
             j.dim_param = str(shapes.pop(0))
@@ -586,6 +619,7 @@ def run(
         batch_size=1,  # batch size
         device='cpu',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         include=('torchscript', 'onnx'),  # include formats
+        class_agnostic=False,
         half=False,  # FP16 half-precision export
         inplace=False,  # set YOLO Detect() inplace=True
         keras=False,  # use Keras
@@ -602,6 +636,9 @@ def run(
         topk_all=100,  # TF.js NMS: topk for all classes to keep
         iou_thres=0.45,  # TF.js NMS: IoU threshold
         conf_thres=0.25,  # TF.js NMS: confidence threshold
+        mask_resolution=56,
+        pooler_scale=0.25,
+        sampling_ratio=0,
 ):
     t = time.time()
     include = [x.lower() for x in include]  # to lowercase
@@ -655,7 +692,7 @@ def run(
         f[2], _ = export_onnx(model, im, file, opset, dynamic, simplify)
     if onnx_end2end:
         labels = model.names
-        f[2], _ = export_onnx_end2end(model, im, file, simplify, topk_all, iou_thres, conf_thres, device, len(labels))
+        f[2], _ = export_onnx_end2end(model, im, file, class_agnostic, simplify, topk_all, iou_thres, conf_thres, device, len(labels), mask_resolution, pooler_scale, sampling_ratio )
     if xml:  # OpenVINO
         f[3], _ = export_openvino(file, metadata, half)
     if coreml:  # CoreML
@@ -731,6 +768,10 @@ def parse_opt():
     parser.add_argument('--topk-all', type=int, default=100, help='ONNX END2END/TF.js NMS: topk for all classes to keep')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='ONNX END2END/TF.js NMS: IoU threshold')
     parser.add_argument('--conf-thres', type=float, default=0.25, help='ONNX END2END/TF.js NMS: confidence threshold')
+    parser.add_argument('--class-agnostic', action='store_true', help='Agnostic NMS (single class)')
+    parser.add_argument('--mask-resolution', type=int, default=160, help='Mask pooled output.')
+    parser.add_argument('--pooler-scale', type=float, default=0.25, help='Multiplicative factor used to translate the ROI coordinates. ')
+    parser.add_argument('--sampling-ratio', type=int, default=0, help='Number of sampling points in the interpolation. Allowed values are non-negative integers.')
     parser.add_argument(
         '--include',
         nargs='+',
