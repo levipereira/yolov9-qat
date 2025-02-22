@@ -27,6 +27,7 @@ import re
 from typing import List, Callable, Union, Dict
 from tqdm import tqdm
 from copy import deepcopy
+import types
 
 # PyTorch
 import torch
@@ -34,12 +35,13 @@ import torch.optim as optim
 from torch.cuda import amp
 import torch.nn.functional as F
 
-# Pytorch Quantization
-from pytorch_quantization import nn as quant_nn
-from pytorch_quantization.nn.modules import _utils as quant_nn_utils
-from pytorch_quantization import calib
-from pytorch_quantization.tensor_quant import QuantDescriptor
-from pytorch_quantization import quant_modules
+# ModelOpt Quantization (replacing pytorch_quantization)
+from modelopt.torch.quantization import nn as quant_nn
+from modelopt.torch.quantization.nn.modules.quant_module import QuantInputBase
+from modelopt.torch.quantization import calib
+from modelopt.torch.quantization.config import QuantizerAttributeConfig
+from modelopt.torch.quantization import model_quant
+from modelopt.torch.quantization.model_quant import disable_quantizer
 from absl import logging as quant_logging
 
 import onnx_graphsurgeon as gs
@@ -47,25 +49,29 @@ from utils.general import (check_requirements, LOGGER,colorstr)
 from models.quantize_rules import find_quantizer_pairs
 
 
-class QuantAdd(torch.nn.Module, quant_nn_utils.QuantMixin):
-    def __init__(self, quantization):
+class QuantAdd(torch.nn.Module):
+    def __init__(self, quantization, calib_method="max", percentile=99.999):
         super().__init__()
-        
-        if quantization:
-            self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
-            self._input1_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
         self.quantization = quantization
+        if quantization:
+            config = {"num_bits": 8, "calibrator": calib_method}
+            if calib_method == "percentile":
+                config["percentile"] = percentile
+            self._input0_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
+            self._input1_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
 
     def forward(self, x, y):
         if self.quantization:
             return self._input0_quantizer(x) + self._input1_quantizer(y)
         return x + y
 
-
 class QuantADownAvgChunk(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, calib_method="max", percentile=99.999):
         super().__init__()
-        self._chunk_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._chunk_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
         self._chunk_quantizer._calibrator._torch_hist = True
         self.avg_pool2d = torch.nn.AvgPool2d(2, 1, 0, False, True)
 
@@ -75,9 +81,12 @@ class QuantADownAvgChunk(torch.nn.Module):
         return x.chunk(2, 1)
 
 class QuantAConvAvgChunk(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, calib_method="max", percentile=99.999):
         super().__init__()
-        self._chunk_quantizer = quant_nn.TensorQuantizer(QuantDescriptor(num_bits=8, calib_method="histogram"))
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._chunk_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
         self._chunk_quantizer._calibrator._torch_hist = True
         self.avg_pool2d = torch.nn.AvgPool2d(2, 1, 0, False, True)
 
@@ -87,30 +96,40 @@ class QuantAConvAvgChunk(torch.nn.Module):
         return x
     
 class QuantRepNCSPELAN4Chunk(torch.nn.Module):
-    def __init__(self, c):
+    def __init__(self, c, calib_method="max", percentile=99.999):
         super().__init__()
-        self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
         self.c = c
+
     def forward(self, x, chunks, dims):
         return torch.split(self._input0_quantizer(x), (self.c, self.c), dims) 
        
 class QuantUpsample(torch.nn.Module): 
-    def __init__(self, size, scale_factor, mode):
+    def __init__(self, size, scale_factor, mode, calib_method="max", percentile=99.999):
         super().__init__()
         self.size = size
         self.scale_factor = scale_factor
         self.mode = mode
-        self._input_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._input_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
         
     def forward(self, x):
         return F.interpolate(self._input_quantizer(x), self.size, self.scale_factor, self.mode) 
 
              
 class QuantConcat(torch.nn.Module): 
-    def __init__(self, dim):
+    def __init__(self, dim, calib_method="max", percentile=99.999):
         super().__init__()
-        self._input0_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
-        self._input1_quantizer = quant_nn.TensorQuantizer(QuantDescriptor())
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
+        self._input1_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
         self.dim = dim
 
     def forward(self, x, dim):
@@ -160,12 +179,11 @@ def have_quantizer(module):
 
 # Initialize PyTorch Quantization
 def initialize():
-    quant_modules.initialize( )
-    quant_desc_input = QuantDescriptor(calib_method="histogram")
-    quant_nn.QuantConv2d.set_default_quant_desc_input(quant_desc_input)
-    quant_nn.QuantLinear.set_default_quant_desc_input(quant_desc_input)
-    quant_nn.QuantAvgPool2d.set_default_quant_desc_input(quant_desc_input)
-    quant_nn.QuantMaxPool2d.set_default_quant_desc_input(quant_desc_input)
+    quant_desc_input = QuantizerAttributeConfig(calibrator="histogram")
+    quant_nn.QuantConv2d.default_quant_desc_input = quant_desc_input
+    quant_nn.QuantLinear.default_quant_desc_input = quant_desc_input
+    quant_nn.QuantAvgPool2d.default_quant_desc_input = quant_desc_input
+    quant_nn.QuantMaxPool2d.default_quant_desc_input = quant_desc_input
 
     quant_logging.set_verbosity(quant_logging.ERROR)
    
@@ -240,17 +258,18 @@ def transfer_torch_to_quantization(nninstance : torch.nn.Module, quantmodule):
     def __init__(self):
         if self.__class__.__name__ == 'QuantAvgPool2d':
             self.__init__(nninstance.kernel_size, nninstance.stride, nninstance.padding, nninstance.ceil_mode, nninstance.count_include_pad)
-        elif isinstance(self, quant_nn_utils.QuantInputMixin):
-            quant_desc_input, quant_desc_weight = quant_nn_utils.pop_quant_desc_in_kwargs(self.__class__)
-            self.init_quantizer(quant_desc_input)
-
-            # Turn on torch_hist to enable higher calibration speeds
+        elif isinstance(self, QuantInputBase):
+            quant_desc_input = QuantizerAttributeConfig(calib_method="histogram")
+            self.default_quant_desc_input = quant_desc_input
+            super().__init__()
             if isinstance(self._input_quantizer._calibrator, calib.HistogramCalibrator):
                 self._input_quantizer._calibrator._torch_hist = True
         else:
-            quant_desc_input, quant_desc_weight = quant_nn_utils.pop_quant_desc_in_kwargs(self.__class__)
-            self.init_quantizer(quant_desc_input, quant_desc_weight)
-            # Turn on torch_hist to enable higher calibration speeds
+            quant_desc_input = QuantizerAttributeConfig(calib_method="histogram")
+            quant_desc_weight = QuantizerAttributeConfig(calib_method="histogram")
+            self.default_quant_desc_input = quant_desc_input
+            self.default_quant_desc_weight = quant_desc_weight
+            super().__init__()
             if isinstance(self._input_quantizer._calibrator, calib.HistogramCalibrator):
                 self._input_quantizer._calibrator._torch_hist = True
                 self._weight_quantizer._calibrator._torch_hist = True
@@ -287,28 +306,15 @@ def set_module(model, submodule_key, module):
 
 
 def replace_to_quantization_module(model : torch.nn.Module, ignore_policy : Union[str, List[str], Callable] = None, prefixx=colorstr('QAT:')):
-
-    module_dict = {}
-    for entry in quant_modules._DEFAULT_QUANT_MAP:
-        module = getattr(entry.orig_mod, entry.mod_name)
-        module_dict[id(module)] = entry.replace_mod
-
-    def recursive_and_replace_module(module, prefix=""):
-        for name in module._modules:
-            submodule = module._modules[name]
-            path      = name if prefix == "" else prefix + "." + name
-            recursive_and_replace_module(submodule, path)
-
-            submodule_id = id(type(submodule))
-            if submodule_id in module_dict:
-                ignored = quantization_ignore_match(ignore_policy, path)
-                if ignored:
-                    LOGGER.info(f'{prefixx} Quantization: {path} has ignored.')
-                    continue
-                    
-                module._modules[name] = transfer_torch_to_quantization(submodule, module_dict[submodule_id])
-
-    recursive_and_replace_module(model)
+    if ignore_policy:
+        if isinstance(ignore_policy, str):
+            disable_quantizer(model, ignore_policy)
+        elif isinstance(ignore_policy, list):
+            for pattern in ignore_policy:
+                disable_quantizer(model, pattern)
+        elif callable(ignore_policy):
+            disable_quantizer(model, ignore_policy)
+    return model
 
 
 def get_attr_with_path(m, path):
@@ -358,24 +364,40 @@ def aconv_quant_forward(self, x):
         x = self.aconvchunkop(x)
         return self.cv1(x)
       
+class QuantRepNBottleneck(torch.nn.Module):
+    def __init__(self, calib_method="max", percentile=99.999):
+        super().__init__()
+        config = {"num_bits": 8, "calibrator": calib_method}
+        if calib_method == "percentile":
+            config["percentile"] = percentile
+        self._input0_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
+        self._input1_quantizer = quant_nn.TensorQuantizer(QuantizerAttributeConfig(**config))
+
+    def forward(self, x, y):
+        return self._input0_quantizer(x) + self._input1_quantizer(y)
+
 def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Callable):
     export_onnx(model,  "quantization-custom-rules-temp.onnx")
     pairs = find_quantizer_pairs("quantization-custom-rules-temp.onnx")
     for major, sub in pairs:
         print(f"Rules: {sub} match to {major}")
-        get_attr_with_path(model, sub)._input_quantizer = get_attr_with_path(model, major)._input_quantizer
+        get_attr_with_path(model, sub).input_quantizer = get_attr_with_path(model, major).input_quantizer
     os.remove("quantization-custom-rules-temp.onnx")
 
     for name, module in model.named_modules():
         if module.__class__.__name__ == "RepNBottleneck":
             if module.add:
                 print(f"Rules: {name}.add match to {name}.cv1")
-                major = module.cv1.conv._input_quantizer
-                module.addop._input0_quantizer = major
-                module.addop._input1_quantizer = major
+                module.addop = QuantRepNBottleneck()
+                module.addop._input0_quantizer = module.cv1.conv.input_quantizer
+                module.addop._input1_quantizer = module.cv1.conv.input_quantizer
+                
+                def new_forward(self, x):
+                    return self.addop(x, self.cv2(self.cv1(x))) if self.add else self.cv2(self.cv1(x))
+                module.forward = types.MethodType(new_forward, module)
 
-        if  isinstance(module, torch.nn.MaxPool2d):
-                quant_conv_desc_input = QuantDescriptor(num_bits=8, calib_method='histogram')
+        if isinstance(module, torch.nn.MaxPool2d):
+                quant_conv_desc_input = QuantizerAttributeConfig(num_bits=8, calibrator="histogram")
                 quant_maxpool2d = quant_nn.QuantMaxPool2d(module.kernel_size,
                                                         module.stride,
                                                         module.padding,
@@ -385,51 +407,44 @@ def apply_custom_rules_to_quantizer(model : torch.nn.Module, export_onnx : Calla
                 set_module(model, name, quant_maxpool2d)
 
         if module.__class__.__name__ == 'ADown':
-            module.cv1.conv._input_quantizer = module.adownchunkop._chunk_quantizer
+            module.adownchunkop = QuantADownAvgChunk()
+            module.cv1.conv.input_quantizer = module.adownchunkop._chunk_quantizer
+            
+            def new_forward(self, x):
+                x1, x2 = self.adownchunkop(x)
+                x1 = self.cv1(x1)
+                x2 = torch.nn.functional.max_pool2d(x2, 3, 2, 1)
+                x2 = self.cv2(x2)
+                return torch.cat((x1, x2), 1)
+            module.forward = types.MethodType(new_forward, module)
+
         if module.__class__.__name__ == 'AConv':
-            module.cv1.conv._input_quantizer = module.aconvchunkop._chunk_quantizer
+            module.aconvchunkop = QuantAConvAvgChunk()
+            module.cv1.conv.input_quantizer = module.aconvchunkop._chunk_quantizer
             
-def replace_custom_module_forward(model):
-    for name, module  in model.named_modules():
-        # if module.__class__.__name__ == "RepNCSPELAN4":
-        #     if not hasattr(module, "repncspelan4chunkop"):
-        #         print(f"Add RepNCSPELAN4QuantChunk to {name}")
-        #         module.repncspelan4chunkop = QuantRepNCSPELAN4Chunk(module.c)
-        #     module.__class__.forward = repncspelan4_qaunt_forward
+            def new_forward(self, x):
+                x = self.aconvchunkop(x)
+                return self.cv1(x)
+            module.forward = types.MethodType(new_forward, module)
 
-        if module.__class__.__name__ == "ADown":
-            if not hasattr(module, "adownchunkop"):
-                print(f"Add ADownQuantChunk to {name}")
-                module.adownchunkop = QuantADownAvgChunk()
-            module.__class__.forward = adown_quant_forward
+def replace_custom_module_forward(model, calib_method="max", percentile=99.999):
+    config = {
+        "quant_cfg": {
+            "*weight_quantizer": {"num_bits": 8, "calibrator": calib_method},
+            "*input_quantizer": {"num_bits": 8, "calibrator": calib_method},
+            "default": {"num_bits": 8, "calibrator": calib_method}
+        },
+        "algorithm": calib_method
+    }
+    if calib_method == "percentile":
+        config["quant_cfg"]["*weight_quantizer"]["percentile"] = percentile
+        config["quant_cfg"]["*input_quantizer"]["percentile"] = percentile
+        config["quant_cfg"]["default"]["percentile"] = percentile
+    
+    model = model_quant.quantize(model, config)
+    return model
 
-        if module.__class__.__name__ == "AConv":
-            if not hasattr(module, "aconvchunkop"):
-                print(f"Add AConvQuantChunk to {name}")
-                module.aconvchunkop = QuantAConvAvgChunk()
-            module.__class__.forward = aconv_quant_forward
-
-        if module.__class__.__name__ == "RepNBottleneck":
-            if module.add:
-                if not hasattr(module, "addop"):
-                    print(f"Add QuantAdd to {name}")
-                    module.addop = QuantAdd(module.add)
-                module.__class__.forward = repbottleneck_quant_forward
-
-        if module.__class__.__name__ == "Concat":
-            if not hasattr(module, "concatop"):
-                print(f"Add QuantConcat to {name}")
-                module.concatop = QuantConcat(module.d)
-            module.__class__.forward = concat_quant_forward
-        
-        if module.__class__.__name__ == "Upsample":
-            if not hasattr(module, "upsampleop"):
-                print(f"Add QuantUpsample to {name}")
-                module.upsampleop = QuantUpsample(module.size, module.scale_factor, module.mode)
-            module.__class__.forward = upsample_quant_forward
-            
-def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
-
+def calibrate_model(model : torch.nn.Module, dataloader, device, calib_method="max", percentile=99.999, num_batch=25):
     def compute_amax(model, **kwargs):
         for name, module in model.named_modules():
             if isinstance(module, quant_nn.TensorQuantizer):
@@ -437,10 +452,12 @@ def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
                     if isinstance(module._calibrator, calib.MaxCalibrator):
                         module.load_calib_amax()
                     else:
+                        if calib_method == "percentile":
+                            kwargs["method"] = calib_method
+                            kwargs["percentile"] = percentile
                         module.load_calib_amax(**kwargs)
-
                     module._amax = module._amax.to(device)
-        
+
     def collect_stats(model, data_loader, device, num_batch=200):
         """Feed data to the network and collect statistics"""
         # Enable calibrators
@@ -474,8 +491,7 @@ def calibrate_model(model : torch.nn.Module, dataloader, device, num_batch=25):
     
     with torch.no_grad():
         collect_stats(model, dataloader, device, num_batch=num_batch)
-        #compute_amax(model, method="percentile", percentile=99.99, strict=True) # strict=False avoid Exception when some quantizer are never used
-        compute_amax(model, method="mse") 
+        compute_amax(model, method=calib_method)
    
 
 

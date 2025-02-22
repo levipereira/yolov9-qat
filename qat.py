@@ -72,7 +72,16 @@ class ReportTool:
 def load_model(weights, device) -> Model:
     with torch_distributed_zero_first(LOCAL_RANK):
         attempt_download(weights)
-    model = torch.load(weights, map_location=device)["model"]
+    
+    checkpoint = torch.load(weights, map_location=device)
+    if "model_state_dict" in checkpoint:
+        # Loading a quantized model
+        model = Model(cfg='models/yolov9.yaml', ch=3, nc=80).to(device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        # Loading a regular model
+        model = checkpoint["model"]
+    
     for m in model.modules():
         if type(m) is nn.Upsample:
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
@@ -94,7 +103,8 @@ def create_train_dataloader(train_path, imgsz, batch_size, single_cls, stride, h
         imgsz=imgsz, 
         batch_size=batch_size, 
         single_cls=single_cls,
-        augment=True, hyp=hyp, rect=False, cache=False, stride=stride, pad=0.0, image_weights=False)[0]
+        augment=True, hyp=hyp, rect=False, cache=False, stride=stride, pad=0.0, image_weights=False,
+        workers=0)[0]
     return loader
 
 
@@ -105,7 +115,8 @@ def create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride, keep
         imgsz=imgsz, 
         batch_size=batch_size, 
         single_cls=single_cls,
-        augment=False, hyp=None, rect=True, cache=False,stride=stride,pad=0.5, image_weights=False)[0]
+        augment=False, hyp=None, rect=True, cache=False, stride=stride, pad=0.5, image_weights=False,
+        workers=0)[0]
 
     def subclass_len(self):
         if keep_images is not None:
@@ -166,7 +177,7 @@ def export_onnx(model, file, im, opset=12, dynamic=False, prefix=colorstr('QAT O
             m.export = False
     
 
-def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, prefix=colorstr('QAT:')):
+def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, supervision_stride, iters, no_eval_origin, no_eval_ptq, calib_method="max", percentile=99.999, prefix=colorstr('QAT:')):
     
     if not Path(weights).exists():
         LOGGER.info(f'{prefix} Weight file not found "{weights}"  ❌')
@@ -210,25 +221,13 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
     exp_imgsz = [check_img_size(x, gs) for x in exp_imgsz]  # verify img_size are gs-multiples
     im = torch.zeros(batch_size, 3, *exp_imgsz).to(device)  # image size(1,3,320,192) BCHW iDetection
 
-
     train_dataloader = create_train_dataloader(train_path, imgsz, batch_size, single_cls, stride, hyp)
     val_dataloader   = create_val_dataloader(test_path, imgsz, batch_size, single_cls, stride)
     
-    ### This rule is disabled - This allow user disable qat per Layers ###
-    # This rule has been disabled, but it remains in the code to maintain compatibility or future implementation.
-    """
-    ignore_layer=-1
-    if ignore_layer > -1:
-        ignore_policy=f"model\.{ignore_layer}\.cv\d+\.\d+\.\d+(\.conv)?"
-    else:
-        ignore_policy=f"model\.9999999999\.cv\d+\.\d+\.\d+(\.conv)?"   
-    """ 
-    ### End ####### 
-    
-    quantize.replace_custom_module_forward(model)
-    quantize.replace_to_quantization_module(model, ignore_policy="disabled")  ## disabled because was not implemented 
-    quantize.apply_custom_rules_to_quantizer(model, lambda model, file: export_onnx(model, file, im))
+    model = quantize.replace_custom_module_forward(model)
+    quantize.replace_to_quantization_module(model, ignore_policy="disabled")
     quantize.calibrate_model(model, train_dataloader, device)
+    quantize.apply_custom_rules_to_quantizer(model, lambda model, file: export_onnx(model, file, im))
 
     report_file = os.path.join(save_dir, "report.json")
     report = ReportTool(report_file)
@@ -238,7 +237,8 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         model_eval = deepcopy(model).eval()  
         with quantize.disable_quantization(model_eval):
             result_eval_origin = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
-            eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in result_eval_origin)
+            eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in result_eval_origin]
+            eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
             LOGGER.info(f'\n{prefix} Eval Origin  - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}')
             report.append(["Origin", str(weights), eval_map, eval_map50,eval_mp, eval_mr  ])
 
@@ -248,10 +248,15 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         model_eval = deepcopy(model).eval()  
         
         result_eval_ptq = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
-        eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in result_eval_ptq)
+        eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in result_eval_ptq]
+        eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
         LOGGER.info(f'\n{prefix} Eval PTQ - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}')
         ptq_weights = w /  f'ptq_ap_{eval_map}_{os.path.basename(weights)}'
-        torch.save({"model": model_eval},f'{ptq_weights}')
+        
+        # Save model state dict instead of the whole model
+        state_dict = model_eval.state_dict()
+        torch.save({"model_state_dict": state_dict}, f'{ptq_weights}')
+        
         LOGGER.info(f'\n{prefix} PTQ, weights saved as {ptq_weights} ({file_size(ptq_weights):.1f} MB)')
         report.append(["PTQ", str(ptq_weights), eval_map, eval_map50,eval_mp, eval_mr ])
 
@@ -264,9 +269,14 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         model_eval = deepcopy(model).eval()  
         with torch.no_grad():  
             eval_result = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
-            eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+            eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in eval_result]
+            eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
         qat_weights = w /  f'qat_ep_{epoch}_ap_{eval_map}_{os.path.basename(weights)}'
-        torch.save({"model": model_eval},f'{qat_weights}')
+        
+        # Save model state dict instead of the whole model
+        state_dict = model_eval.state_dict()
+        torch.save({"model_state_dict": state_dict}, f'{qat_weights}')
+        
         LOGGER.info(f'\n{prefix} Epoch-{epoch}, weights saved as {qat_weights} ({file_size(qat_weights):.1f} MB)')
         report.append([f"QAT-{epoch}", str(qat_weights), eval_map, eval_map50,eval_mp, eval_mr ])
 
@@ -274,7 +284,11 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
             best_map = eval_map
             result_eval_qat_best=eval_result
             qat_weights = w /  f'qat_best_{os.path.basename(weights)}'
-            torch.save({"model": model_eval}, f'{qat_weights}')
+            
+            # Save model state dict instead of the whole model
+            state_dict = model_eval.state_dict()
+            torch.save({"model_state_dict": state_dict}, f'{qat_weights}')
+            
             LOGGER.info(f'{prefix} QAT Best, weights saved as {qat_weights} ({file_size(qat_weights):.1f} MB)')
             report.update(["QAT-Best", str(qat_weights), eval_map, eval_map50,eval_mp, eval_mr ])
 
@@ -284,7 +298,8 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
         LOGGER.info('-' * 55)  
         for idx, eval_r in enumerate(eval_results):
             if eval_r is not None:
-                eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 3) for x in eval_r)
+                eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in eval_r]
+                eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 3) for x in [eval_mp, eval_mr, eval_map50, eval_map])
                 if idx == 0:
                     LOGGER.info(f'Origin     | {eval_map:<8} | {eval_map50:<8} | {eval_mp:<10} | {eval_mr:<8}')
                 if idx == 1:
@@ -292,7 +307,8 @@ def run_quantize(weights, data, imgsz, batch_size, hyp, device, save_dir, superv
                 if idx == 2:
                     LOGGER.info(f'QAT - Best | {eval_map:<8} | {eval_map50:<8} | {eval_mp:<10} | {eval_mr:<8}\n')
             
-        eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+        eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in eval_result]
+        eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
         LOGGER.info(f'\n{prefix} Eval - Epoch {epoch} | AP: {eval_map}  | AP50: {eval_map50} | Precision: {eval_mp} | Recall: {eval_mr}\n')
 
     def preprocess(datas):
@@ -382,7 +398,8 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
     LOGGER.info(f'\n{prefix} Evaluating PTQ...')
 
     eval_result = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
-    eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+    eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in eval_result]
+    eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
 
     LOGGER.info(f'\n{prefix} Eval PTQ - QAT enabled on All Layers - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}')
     report.append([eval_map, "PTQ"])
@@ -395,7 +412,8 @@ def run_sensitive_analysis(weights, device, data, imgsz, batch_size, hyp, save_d
             quantize.disable_quantization(layer).apply()
             model_eval = deepcopy(model).eval()   
             eval_result = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco )
-            eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in eval_result)
+            eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in eval_result]
+            eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
             LOGGER.info(f'\n{prefix} Eval PTQ - QAT disabled on Layer model.{i} - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}\n')
             report.append([eval_map, f"model.{i}"]) 
             quantize.enable_quantization(layer).apply()
@@ -461,7 +479,8 @@ def run_eval(weights, device, data, imgsz, batch_size, save_dir, conf_thres, iou
     model_eval = deepcopy(model).eval()  
  
     result_eval = evaluate_dataset(model_eval, val_dataloader, imgsz, data_dict, single_cls, save_dir, is_coco, conf_thres=conf_thres, iou_thres=iou_thres  )
-    eval_mp, eval_mr, eval_map50, eval_map= tuple(round(x, 4) for x in result_eval)
+    eval_mp, eval_mr, eval_map50, eval_map = [float(x) for x in result_eval]
+    eval_mp, eval_mr, eval_map50, eval_map = tuple(round(x, 4) for x in [eval_mp, eval_mr, eval_map50, eval_map])
     LOGGER.info(f'\n{prefix} Eval Result - AP: {eval_map} AP50: {eval_map50} Precision: {eval_mp} Recall: {eval_mr}')
     LOGGER.info(f'\n{prefix} Eval Result, saved on {save_dir}')
    
@@ -486,6 +505,8 @@ if __name__ == "__main__":
     qat.add_argument("--supervision-stride", type=int, default=1, help="supervision stride")
     qat.add_argument("--no-eval-origin", action="store_false", help="Disable eval for origin model")
     qat.add_argument("--no-eval-ptq", action="store_false", help="Disable eval for ptq model")
+    qat.add_argument("--calib-method", type=str, default="max", choices=["max", "mse", "histogram", "percentile"], help="Calibration method")
+    qat.add_argument("--percentile", type=float, default=99.999, help="Percentile value when using percentile calibration method")
 
     sensitive = subps.add_parser("sensitive", help="Sensitive layer analysis")
     sensitive.add_argument('--weights', type=str, default=ROOT / 'runs/models_original/yolov9-c.pt', help='Weights path (.pt)')
@@ -521,7 +542,9 @@ if __name__ == "__main__":
             opt.weights, opt.data, opt.imgsz, opt.batch_size, 
             opt.hyp, opt.device, Path(opt.save_dir), 
              opt.supervision_stride, opt.iters,
-            opt.no_eval_origin, opt.no_eval_ptq
+            opt.no_eval_origin, opt.no_eval_ptq,
+            calib_method=opt.calib_method,
+            percentile=opt.percentile
         )
 
     elif opt.cmd == "sensitive":

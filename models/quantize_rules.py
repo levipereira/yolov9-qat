@@ -51,18 +51,27 @@ def find_with_no_change_parent_node(model, node):
 """
 
 def find_quantizelinear_conv(model, qnode):
-    dq   = find_with_input_node(model, qnode.output[0])
+    if qnode is None or len(qnode.output) == 0:
+        return None
+    dq = find_with_input_node(model, qnode.output[0])
+    if dq is None or len(dq.output) == 0:
+        return None
     conv = find_with_input_node(model, dq.output[0])
+    if conv is None or len(conv.input) < 2:
+        return None
     return conv
 
 
 def find_quantize_conv_name(model, weight_qname):
     dq = find_with_output_node(model, weight_qname)
-    q  = find_with_output_node(model, dq.input[0])
+    if dq is None or len(dq.input) == 0:
+        return None
+    q = find_with_output_node(model, dq.input[0])
+    if q is None or len(q.input) == 0:
+        return None
     return ".".join(q.input[0].split(".")[:-1])
 
 def find_quantizer_pairs(onnx_file):
-
     model = onnx.load(onnx_file)
     match_pairs = []
     for node in model.graph.node:   
@@ -73,28 +82,44 @@ def find_quantizer_pairs(onnx_file):
                 if qnode.op_type != "QuantizeLinear":
                     continue
                 conv = find_quantizelinear_conv(model, qnode)
+                if conv is None:
+                    continue
                 if major is None:
-                    major = find_quantize_conv_name(model, conv.input[1])
+                    major_name = find_quantize_conv_name(model, conv.input[1])
+                    if major_name is not None:
+                        major = major_name
                 else:
-                    match_pairs.append([major, find_quantize_conv_name(model, conv.input[1])])
+                    sub_name = find_quantize_conv_name(model, conv.input[1])
+                    if sub_name is not None:
+                        match_pairs.append([major, sub_name])
 
                 for subnode in model.graph.node:
                     if len(subnode.input) > 0 and subnode.op_type == "QuantizeLinear" and subnode.input[0] in node.input:
                         subconv = find_quantizelinear_conv(model, subnode)
-                        match_pairs.append([major, find_quantize_conv_name(model, subconv.input[1])])
-
+                        if subconv is not None:
+                            sub_name = find_quantize_conv_name(model, subconv.input[1])
+                            if sub_name is not None:
+                                match_pairs.append([major, sub_name])
 
         elif node.op_type == "MaxPool":
             qnode = find_with_input_node(model, node.output[0])
             if not (qnode and qnode.op_type == "QuantizeLinear"):
                 continue
             major = find_quantizelinear_conv(model, qnode)
-            major = find_quantize_conv_name(model, major.input[1])
+            if major is None:
+                continue
+            major_name = find_quantize_conv_name(model, major.input[1])
+            if major_name is None:
+                continue
+            major = major_name
             same_input_nodes = find_all_with_input_node(model, node.input[0])
 
             for same_input_node in same_input_nodes:
                 if same_input_node.op_type == "QuantizeLinear":
                     subconv = find_quantizelinear_conv(model, same_input_node)
-                    match_pairs.append([major, find_quantize_conv_name(model, subconv.input[1])])
+                    if subconv is not None:
+                        sub_name = find_quantize_conv_name(model, subconv.input[1])
+                        if sub_name is not None:
+                            match_pairs.append([major, sub_name])
                    
     return match_pairs
