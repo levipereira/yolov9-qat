@@ -32,6 +32,7 @@ Note:
 
 import graphviz
 from trex import *
+from trex import graphing
 import argparse
 import shutil
 
@@ -46,16 +47,16 @@ def draw_engine(engine_json_fname: str, engine_profile_fname: str):
         exit()
 
     plan = EnginePlan(engine_json_fname, engine_profile_fname)
-    formatter = layer_type_formatter
+    formatter = graphing.layer_type_formatter
     display_regions = True
     expand_layer_details = False
 
-    graph = to_dot(plan, formatter,
+    graph = graphing.to_dot(plan, formatter,
                 display_regions=display_regions,
                 expand_layer_details=expand_layer_details)
-    render_dot(graph, engine_name, 'svg')
+    graphing.render_dot(graph, engine_name, 'svg')
 
-    render_dot(graph, engine_name, 'png')
+    graphing.render_dot(graph, engine_name, 'png')
 
 
 if __name__ == "__main__":
