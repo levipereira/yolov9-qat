@@ -181,8 +181,16 @@ def export_onnx(model, im, file, opset, dynamic, simplify, prefix=colorstr('ONNX
 
 @try_export
 def export_onnx_end2end(model, im, file, class_agnostic, simplify, topk_all, iou_thres, conf_thres, device, labels, mask_resolution, pooler_scale, sampling_ratio, prefix=colorstr('ONNX END2END:')):
-    if not isinstance(model, DetectionModel) or not isinstance(model, SegmentationModel):
+    LOGGER.info(f'{prefix} Model type: {type(model)}')
+    LOGGER.info(f'{prefix} Is DetectionModel: {isinstance(model, DetectionModel)}')
+    LOGGER.info(f'{prefix} Is SegmentationModel: {isinstance(model, SegmentationModel)}')
+    
+    has_detection_capabilities = hasattr(model, 'model') and hasattr(model, 'names') and hasattr(model, 'stride')
+    
+    if not has_detection_capabilities:
         raise RuntimeError("Model not supported. Only Detection Models can be exported with End2End functionality.")
+    
+    LOGGER.info(f'{prefix} Model accepted for export.')
 
     is_det_model=True
     if isinstance(model, SegmentationModel):
