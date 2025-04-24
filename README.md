@@ -1,4 +1,4 @@
-# YOLOv9 QAT for TensorRT  Detection / Segmentation 
+# YOLOv9 QAT for TensorRT 10.9  Detection / Segmentation 
 
 This repository contains an implementation of YOLOv9 with Quantization-Aware Training (QAT), specifically designed for deployment on platforms utilizing TensorRT for hardware-accelerated inference. <br>
 This implementation aims to provide an efficient, low-latency version of YOLOv9 for real-time detection applications.<br>
@@ -10,7 +10,7 @@ If you do not intend to deploy your model using TensorRT, it is recommended not 
 - Users interested in implementing object detection using YOLOv9 with QAT on TensorRT platforms can benefit from this repository as it provides a ready-to-use solution.
 
 
-We use [TensorRT's pytorch quntization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
+We use [TensorRT's pytorch quantization tool](https://github.com/NVIDIA/TensorRT/tree/main/tools/pytorch-quantization) to finetune training QAT yolov9 from the pre-trained weight, then export the model to onnx and deploy it with TensorRT. The accuray and performance can be found in below table.
 
 For those who are not familiar with QAT, I highly recommend watching this video:<br> [Quantization explained with PyTorch - Post-Training Quantization, Quantization-Aware Training](https://www.youtube.com/watch?v=0VdNflU08yA)
 
@@ -153,22 +153,19 @@ In this section, we'll outline the steps to perform Quantization-Aware Training 
  
 
 
-
-
-
 By following these steps, you can successfully perform Quantization-Aware Training (QAT) using fine-tuning with your YOLOv9 model.
 
 ## How to Install and Training 
 Suggest to use docker environment.
-NVIDIA PyTorch image (`nvcr.io/nvidia/pytorch:23.02-py3`)
+NVIDIA PyTorch image (`nvcr.io/nvidia/pytorch:24.10-py3`)
 
-Release 23.02 is based on CUDA 12.0.1, which requires NVIDIA Driver release 525 or later. 
-
+Release 24.10 is based Ubuntu 22.04 including Python 3.10 CUDA 12.6.2, which requires NVIDIA Driver release 560 or later, if you are running on a data center GPU check docs.
+https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel-24-10.html
 
 ## Installation
 ```bash
 
-docker pull nvcr.io/nvidia/pytorch:23.02-py3
+docker pull nvcr.io/nvidia/pytorch:24.10-py3
 
 ## clone original yolov9
 git clone https://github.com/WongKinYiu/yolov9.git
@@ -180,7 +177,7 @@ docker run --gpus all  \
  -v $(pwd)/yolov9:/yolov9 \
  -v $(pwd)/coco/:/yolov9/coco \
  -v $(pwd)/runs:/yolov9/runs \
- nvcr.io/nvidia/pytorch:23.02-py3
+ nvcr.io/nvidia/pytorch:24.10-py3
 
 ```
 
@@ -194,16 +191,14 @@ cd /yolov9-qat
 
 2. Install dependencies
 
-- **This release upgrade TensorRT from 8.5 to 10.0**
-- `./install_dependencies.sh --defaults  [--trex]` 
-- `--defaults` Install/Upgrade required packages 
-- `--trex` Install TensoRT Explorer (trex) on virtual env. Required only if you want generate Graph SVG for visualizing the profiling of a TensorRT engine. 
+- **This release upgrade TensorRT to 10.9**
+- `./install_dependencies.sh` 
 
 ```bash
 cd /yolov9-qat
-./install_dependencies.sh --defaults
-cd /yolov9
+./install_dependencies.sh 
 ```
+
 
 3. Download dataset and pretrained model
 ```bash
